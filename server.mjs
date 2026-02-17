@@ -16,19 +16,14 @@ const apiKey = process.env.GEMINI_API_KEY;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const distDir = path.join(__dirname, 'dist');
-const dataDir = path.join(__dirname, 'data');
+const dataDir = process.env.DATA_DIR || '/tmp/talent-finder-data';
 const dataFile = process.env.DATA_FILE || path.join(dataDir, 'db.json');
-
-if (!apiKey) {
-  console.error('Missing GEMINI_API_KEY in server environment.');
-  process.exit(1);
-}
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@talentfinder.com';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'ChangeMeNow123!';
 const SHOW_VERIFICATION_CODE = process.env.SHOW_VERIFICATION_CODE === 'true';
 
-const ai = new GoogleGenAI({ apiKey });
+const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 const INTERVIEW_MODEL = 'gemini-2.5-flash';
 const ANALYSIS_MODEL = 'gemini-3-pro-preview';
 const adminSessions = new Map();
@@ -282,6 +277,10 @@ app.patch('/api/admin/users/:id/status', requireAdmin, (req, res) => {
 
 app.post('/api/ai/generate-questions', async (req, res) => {
   try {
+    if (!ai) {
+      return res.status(503).json({ error: 'AI service is not configured.' });
+    }
+
     const { prompt } = req.body || {};
     if (!prompt || typeof prompt !== 'string') {
       return res.status(400).json({ error: 'Invalid prompt.' });
@@ -309,6 +308,10 @@ app.post('/api/ai/generate-questions', async (req, res) => {
 
 app.post('/api/ai/transcribe-analyze', async (req, res) => {
   try {
+    if (!ai) {
+      return res.status(503).json({ error: 'AI service is not configured.' });
+    }
+
     const { question, mimeType, base64Audio } = req.body || {};
     if (!question || !base64Audio) {
       return res.status(400).json({ error: 'Missing question or audio.' });
@@ -349,6 +352,10 @@ app.post('/api/ai/transcribe-analyze', async (req, res) => {
 
 app.post('/api/ai/generate-profile', async (req, res) => {
   try {
+    if (!ai) {
+      return res.status(503).json({ error: 'AI service is not configured.' });
+    }
+
     const { prompt, fallbackRole, fallbackScore } = req.body || {};
     if (!prompt || typeof prompt !== 'string') {
       return res.status(400).json({ error: 'Invalid prompt.' });

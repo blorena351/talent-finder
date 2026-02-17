@@ -16,5 +16,7 @@ services:
         sync: false
       - key: SHOW_VERIFICATION_CODE
         value: false
+      - key: DATA_DIR
+        value: /tmp/talent-finder-data
       - key: PORT
         value: 10000
