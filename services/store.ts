@@ -204,16 +204,27 @@ export const Store = {
   },
 
   // Auth: Register Step 1
-  register: async (email: string, password: string, role: 'company' | 'applicant'): Promise<{ success: boolean; message?: string }> => {
+  register: async (email: string, password: string, role: 'company' | 'applicant'): Promise<{ success: boolean; message?: string; emailVerificationRequired?: boolean }> => {
     try {
-      const result = await postJSON<{ success: boolean; message?: string; debugVerificationCode?: string }>(
+      const result = await postJSON<{ success: boolean; message?: string; debugVerificationCode?: string; user?: User; emailVerificationRequired?: boolean }>(
         '/api/auth/register',
         { email, password, role }
       );
+      if (result.success && result.user) {
+        const users = Store.getUsers();
+        const idx = users.findIndex(u => u.email === result.user!.email);
+        if (idx === -1) {
+          users.push(result.user);
+        } else {
+          users[idx] = { ...users[idx], ...result.user };
+        }
+        localStorage.setItem('talent_finder_users', JSON.stringify(users));
+        localStorage.setItem('talent_finder_current_user', JSON.stringify(result.user));
+      }
       if (result.debugVerificationCode && DEMO_MODE_ENABLED) {
         alert(`[DEMO] Your verification code is: ${result.debugVerificationCode}`);
       }
-      return { success: result.success, message: result.message };
+      return { success: result.success, message: result.message, emailVerificationRequired: result.emailVerificationRequired };
     } catch (error) {
       await delay(800);
       const users = Store.getUsers();
@@ -228,24 +239,19 @@ export const Store = {
           role,
           passwordHash: hashPassword(password),
           status: 'active',
-          emailVerified: false,
+          emailVerified: true,
           onboardingComplete: false,
           isDemo: false,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
       };
 
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
-      verificationCodes.set(email, code);
       users.push(newUser);
       localStorage.setItem('talent_finder_users', JSON.stringify(users));
-
-      if (DEMO_MODE_ENABLED) {
-        alert(`[DEMO] Your verification code is: ${code}`);
-      }
+      localStorage.setItem('talent_finder_current_user', JSON.stringify(newUser));
 
       console.warn('Remote register failed, fallback to local mode.', error);
-      return { success: true };
+      return { success: true, emailVerificationRequired: false };
     }
   },
 

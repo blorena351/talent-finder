@@ -21,7 +21,7 @@ interface AuthProps {
   onBack: () => void;
 }
 
-type AuthStep = 'SELECT_ROLE' | 'SIGNUP_FORM' | 'VERIFY_EMAIL' | 'ONBOARDING' | 'LOGIN_FORM';
+type AuthStep = 'SELECT_ROLE' | 'SIGNUP_FORM' | 'ONBOARDING' | 'LOGIN_FORM';
 
 export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
   const demoEnabled = import.meta.env.VITE_ENABLE_DEMO === 'true';
@@ -33,7 +33,6 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [verificationCode, setVerificationCode] = useState('');
 
   const [companyForm, setCompanyForm] = useState({
     companyName: '',
@@ -75,7 +74,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
     setIsLoading(false);
 
     if (result.success) {
-      setStep('VERIFY_EMAIL');
+      setStep('ONBOARDING');
     } else {
       setError(result.message || 'Registration failed.');
     }
@@ -116,20 +115,6 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
       onLogin(demoUser);
     } else {
       setError('Demo configuration missing. Enable VITE_ENABLE_DEMO=true to use demo accounts.');
-    }
-  };
-
-  const handleVerify = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setIsLoading(true);
-    const success = await Store.verifyEmail(email, verificationCode);
-    setIsLoading(false);
-
-    if (success) {
-      setStep('ONBOARDING');
-    } else {
-      setError('Invalid verification code.');
     }
   };
 
@@ -276,36 +261,6 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
 
         <button type="submit" disabled={isLoading} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-colors mt-4 disabled:opacity-50">
           {isLoading ? 'Creating Account...' : 'Create Account'}
-        </button>
-      </form>
-    </div>
-  );
-
-  const renderVerification = () => (
-    <div className="w-full max-w-md animate-in slide-in-from-right-8 duration-300 text-center">
-      <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
-        <EnvelopeIcon className="w-8 h-8 text-blue-500" />
-      </div>
-      <h2 className="text-2xl font-bold text-white mb-2">Check your email</h2>
-      <p className="text-zinc-400 mb-8">
-        We sent a 6-digit code to <span className="text-white">{email}</span>.
-      </p>
-
-      <form onSubmit={handleVerify} className="space-y-6">
-        <input
-          type="text"
-          maxLength={6}
-          required
-          className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-4 text-center text-2xl tracking-[0.5em] text-white focus:border-blue-500 outline-none transition-colors font-mono"
-          value={verificationCode}
-          onChange={(e) => setVerificationCode(e.target.value.replace(/[^0-9]/g, ''))}
-          placeholder="000000"
-        />
-
-        {error && <p className="text-red-400 text-sm">{error}</p>}
-
-        <button type="submit" disabled={isLoading || verificationCode.length !== 6} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-colors disabled:opacity-50">
-          {isLoading ? 'Verifying...' : 'Verify Email'}
         </button>
       </form>
     </div>
@@ -576,7 +531,6 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
 
         {step === 'SELECT_ROLE' && renderRoleSelection()}
         {step === 'SIGNUP_FORM' && renderSignup()}
-        {step === 'VERIFY_EMAIL' && renderVerification()}
         {step === 'ONBOARDING' && renderOnboarding()}
         {step === 'LOGIN_FORM' && renderLogin()}
       </div>

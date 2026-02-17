@@ -22,6 +22,7 @@ const dataFile = process.env.DATA_FILE || path.join(dataDir, 'db.json');
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@talentfinder.com';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'ChangeMeNow123!';
 const SHOW_VERIFICATION_CODE = process.env.SHOW_VERIFICATION_CODE === 'true';
+const DISABLE_EMAIL_VERIFICATION = process.env.DISABLE_EMAIL_VERIFICATION !== 'false';
 
 const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 const INTERVIEW_MODEL = 'gemini-2.5-flash';
@@ -123,19 +124,23 @@ app.post('/api/auth/register', (req, res) => {
       role,
       passwordHash: hashPassword(password),
       status: 'active',
-      emailVerified: false,
+      emailVerified: DISABLE_EMAIL_VERIFICATION,
       onboardingComplete: false,
       createdAt: now,
       updatedAt: now,
     };
 
     const code = Math.floor(100000 + Math.random() * 900000).toString();
-    db.verificationCodes[newUser.email] = code;
+    if (!DISABLE_EMAIL_VERIFICATION) {
+      db.verificationCodes[newUser.email] = code;
+    }
     db.users.push(newUser);
     writeDb(db);
 
     return res.json({
       success: true,
+      user: publicUser(newUser),
+      emailVerificationRequired: !DISABLE_EMAIL_VERIFICATION,
       ...(SHOW_VERIFICATION_CODE ? { debugVerificationCode: code } : {}),
     });
   } catch (error) {
@@ -183,7 +188,7 @@ app.post('/api/auth/login', (req, res) => {
     if (user.passwordHash !== hashPassword(String(password || ''))) {
       return res.status(401).json({ success: false, message: 'Invalid password.' });
     }
-    if (user.role !== 'admin' && !user.emailVerified) {
+    if (!DISABLE_EMAIL_VERIFICATION && user.role !== 'admin' && !user.emailVerified) {
       return res.status(403).json({ success: false, message: 'Email not verified.' });
     }
 

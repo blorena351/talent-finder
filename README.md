@@ -19,6 +19,7 @@ Copy `.env.example` to `.env.local` and set:
 - `ADMIN_EMAIL`: admin account email for backoffice
 - `ADMIN_PASSWORD`: admin account password for backoffice
 - `SHOW_VERIFICATION_CODE`: set `true` only in non-production for email-code debug
+- `DISABLE_EMAIL_VERIFICATION`: set `true` to skip email-code verification in signup (recommended for demo/testing)
 
 ## Run Locally
 

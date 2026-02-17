@@ -16,6 +16,8 @@ services:
         sync: false
       - key: SHOW_VERIFICATION_CODE
         value: false
+      - key: DISABLE_EMAIL_VERIFICATION
+        value: true
       - key: DATA_DIR
         value: /tmp/talent-finder-data
       - key: PORT
