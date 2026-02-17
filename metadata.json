@@ -1,0 +1,8 @@
+{
+  "name": "Talent Finder",
+  "description": "AI-powered interviews, candidate scoring, and hiring workflows.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
