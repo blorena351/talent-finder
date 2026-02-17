@@ -85,7 +85,13 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
-    const result = await Store.login(email, password);
+    let result = await Store.login(email, password);
+    if (!result.success) {
+      const adminResult = await Store.adminLogin(email, password);
+      if (adminResult.success) {
+        result = adminResult;
+      }
+    }
     setIsLoading(false);
 
     if (result.success && result.user) {

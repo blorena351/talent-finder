@@ -144,10 +144,57 @@ export const videoStorage = new Map<string, Record<number, Blob>>();
 // Mock verification codes: email -> code
 const verificationCodes = new Map<string, string>();
 const DEMO_MODE_ENABLED = import.meta.env.VITE_ENABLE_DEMO === 'true';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+const ADMIN_TOKEN_KEY = 'talent_finder_admin_token';
 
 // Helpers
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 const hashPassword = (pwd: string) => `$$hash_${pwd.split('').reverse().join('')}`; // Mock hashing
+const postJSON = async <T>(path: string, payload: unknown, token?: string): Promise<T> => {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({} as any));
+    throw new Error(body?.message || body?.error || `Request failed (${response.status})`);
+  }
+  return response.json();
+};
+
+const patchJSON = async <T>(path: string, payload: unknown, token?: string): Promise<T> => {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({} as any));
+    throw new Error(body?.message || body?.error || `Request failed (${response.status})`);
+  }
+  return response.json();
+};
+
+const getJSON = async <T>(path: string, token?: string): Promise<T> => {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'GET',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({} as any));
+    throw new Error(body?.message || body?.error || `Request failed (${response.status})`);
+  }
+  return response.json();
+};
 
 // Mock Database methods
 export const Store = {
@@ -158,83 +205,116 @@ export const Store = {
 
   // Auth: Register Step 1
   register: async (email: string, password: string, role: 'company' | 'applicant'): Promise<{ success: boolean; message?: string }> => {
-    await delay(800);
-    const users = Store.getUsers();
-    
-    if (users.find(u => u.email === email)) {
+    try {
+      const result = await postJSON<{ success: boolean; message?: string; debugVerificationCode?: string }>(
+        '/api/auth/register',
+        { email, password, role }
+      );
+      if (result.debugVerificationCode && DEMO_MODE_ENABLED) {
+        alert(`[DEMO] Your verification code is: ${result.debugVerificationCode}`);
+      }
+      return { success: result.success, message: result.message };
+    } catch (error) {
+      await delay(800);
+      const users = Store.getUsers();
+      if (users.find(u => u.email === email)) {
         return { success: false, message: "Email already registered." };
+      }
+
+      const newUser: User = {
+          id: crypto.randomUUID(),
+          email,
+          name: email.split('@')[0], // Temporary name
+          role,
+          passwordHash: hashPassword(password),
+          status: 'active',
+          emailVerified: false,
+          onboardingComplete: false,
+          isDemo: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+      };
+
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      verificationCodes.set(email, code);
+      users.push(newUser);
+      localStorage.setItem('talent_finder_users', JSON.stringify(users));
+
+      if (DEMO_MODE_ENABLED) {
+        alert(`[DEMO] Your verification code is: ${code}`);
+      }
+
+      console.warn('Remote register failed, fallback to local mode.', error);
+      return { success: true };
     }
-
-    const newUser: User = {
-        id: crypto.randomUUID(),
-        email,
-        name: email.split('@')[0], // Temporary name
-        role,
-        passwordHash: hashPassword(password),
-        status: 'active',
-        emailVerified: false,
-        onboardingComplete: false,
-        isDemo: false,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-    };
-
-    // Generate Verification Code
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    verificationCodes.set(email, code);
-    
-    // Save User
-    users.push(newUser);
-    localStorage.setItem('talent_finder_users', JSON.stringify(users));
-
-    // In a real app, send email here.
-    if (DEMO_MODE_ENABLED) {
-      alert(`[DEMO] Your verification code is: ${code}`);
-    }
-
-    return { success: true };
   },
 
   // Auth: Verify Email
   verifyEmail: async (email: string, code: string): Promise<boolean> => {
-      await delay(600);
-      const storedCode = verificationCodes.get(email);
-      if (storedCode === code) {
-          const users = Store.getUsers();
-          const userIndex = users.findIndex(u => u.email === email);
-          if (userIndex !== -1) {
-              users[userIndex].emailVerified = true;
+      try {
+          const result = await postJSON<{ success: boolean; user?: User }>('/api/auth/verify', { email, code });
+          if (result.success && result.user) {
+              const users = Store.getUsers();
+              const userIndex = users.findIndex(u => u.email === result.user!.email);
+              if (userIndex === -1) {
+                  users.push(result.user);
+              } else {
+                  users[userIndex] = { ...users[userIndex], ...result.user };
+              }
               localStorage.setItem('talent_finder_users', JSON.stringify(users));
-              
-              // Login session
-              localStorage.setItem('talent_finder_current_user', JSON.stringify(users[userIndex]));
+              localStorage.setItem('talent_finder_current_user', JSON.stringify(result.user));
               return true;
           }
+          return false;
+      } catch (error) {
+          await delay(600);
+          const storedCode = verificationCodes.get(email);
+          if (storedCode === code) {
+              const users = Store.getUsers();
+              const userIndex = users.findIndex(u => u.email === email);
+              if (userIndex !== -1) {
+                  users[userIndex].emailVerified = true;
+                  localStorage.setItem('talent_finder_users', JSON.stringify(users));
+                  localStorage.setItem('talent_finder_current_user', JSON.stringify(users[userIndex]));
+                  return true;
+              }
+          }
+          console.warn('Remote verify failed, fallback to local mode.', error);
       }
       return false;
   },
 
   // Auth: Login
   login: async (email: string, password: string): Promise<{ success: boolean; user?: User; message?: string }> => {
-    await delay(800);
-    const users = Store.getUsers();
-    const user = users.find(u => u.email === email);
-    
-    if (!user) return { success: false, message: "User not found." };
-    
-    // Check password
-    if (user.passwordHash !== hashPassword(password)) {
-        return { success: false, message: "Invalid password." };
+    try {
+      const result = await postJSON<{ success: boolean; user?: User; message?: string }>('/api/auth/login', { email, password });
+      if (result.success && result.user) {
+        const users = Store.getUsers();
+        const idx = users.findIndex(u => u.email === result.user!.email);
+        if (idx === -1) {
+          users.push(result.user);
+        } else {
+          users[idx] = { ...users[idx], ...result.user };
+        }
+        localStorage.setItem('talent_finder_users', JSON.stringify(users));
+        localStorage.setItem('talent_finder_current_user', JSON.stringify(result.user));
+      }
+      return result;
+    } catch (error: any) {
+      await delay(800);
+      const users = Store.getUsers();
+      const user = users.find(u => u.email === email);
+      if (!user) return { success: false, message: "User not found." };
+      if (user.passwordHash !== hashPassword(password)) {
+          return { success: false, message: "Invalid password." };
+      }
+      if (!user.emailVerified && user.role !== 'admin' && !user.isDemo) {
+          return { success: false, message: "Email not verified." };
+      }
+      localStorage.setItem('talent_finder_current_user', JSON.stringify(user));
+      console.warn('Remote login failed, fallback to local mode.', error);
+      return { success: true, user };
     }
-
-    // Check verification
-    if (!user.emailVerified && user.role !== 'admin' && !user.isDemo) {
-        // Resend code logic would go here
-        return { success: false, message: "Email not verified." };
-    }
-
-    localStorage.setItem('talent_finder_current_user', JSON.stringify(user));
-    return { success: true, user };
   },
 
   // Get Demo User Helper
@@ -266,6 +346,17 @@ export const Store = {
           users[idx].name = profile.companyName; // Use company name as display name
           localStorage.setItem('talent_finder_users', JSON.stringify(users));
           localStorage.setItem('talent_finder_current_user', JSON.stringify(users[idx])); // Update session
+      }
+
+      try {
+          await postJSON('/api/auth/onboarding', {
+              userId,
+              role: 'company',
+              displayName: profile.companyName,
+              profile
+          });
+      } catch (error) {
+          console.warn('Remote onboarding sync failed (company).', error);
       }
   },
 
@@ -357,6 +448,17 @@ export const Store = {
           localStorage.setItem('talent_finder_users', JSON.stringify(users));
           localStorage.setItem('talent_finder_current_user', JSON.stringify(users[idx])); // Update session
       }
+
+      try {
+          await postJSON('/api/auth/onboarding', {
+              userId,
+              role: 'applicant',
+              displayName: profile.fullName,
+              profile
+          });
+      } catch (error) {
+          console.warn('Remote onboarding sync failed (applicant).', error);
+      }
   },
 
   getCurrentUser: (): User | null => {
@@ -366,6 +468,7 @@ export const Store = {
 
   logout: () => {
     localStorage.removeItem('talent_finder_current_user');
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
   },
 
   updateUserStatus: (userId: string, status: 'active' | 'suspended') => {
@@ -374,6 +477,47 @@ export const Store = {
       if (idx !== -1) {
           users[idx].status = status;
           localStorage.setItem('talent_finder_users', JSON.stringify(users));
+      }
+  },
+
+  adminLogin: async (email: string, password: string): Promise<{ success: boolean; user?: User; message?: string }> => {
+      try {
+          const result = await postJSON<{ success: boolean; token?: string; user?: User; message?: string }>(
+            '/api/admin/login',
+            { email, password }
+          );
+          if (result.success && result.user && result.token) {
+              localStorage.setItem(ADMIN_TOKEN_KEY, result.token);
+              localStorage.setItem('talent_finder_current_user', JSON.stringify(result.user));
+              return { success: true, user: result.user };
+          }
+          return { success: false, message: result.message || 'Admin login failed.' };
+      } catch (error: any) {
+          return { success: false, message: error?.message || 'Admin login failed.' };
+      }
+  },
+
+  getAdminUsers: async (): Promise<User[]> => {
+      const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+      if (!token) return [];
+      try {
+          const result = await getJSON<{ users: User[] }>('/api/admin/users', token);
+          return result.users || [];
+      } catch (error) {
+          console.warn('Failed to load admin users from API.', error);
+          return [];
+      }
+  },
+
+  updateAdminUserStatus: async (userId: string, status: 'active' | 'suspended'): Promise<boolean> => {
+      const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+      if (!token) return false;
+      try {
+          await patchJSON(`/api/admin/users/${userId}/status`, { status }, token);
+          return true;
+      } catch (error) {
+          console.warn('Failed to update admin user status.', error);
+          return false;
       }
   },
 

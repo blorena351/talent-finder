@@ -29,8 +29,9 @@ export const AdminDashboard: React.FC = () => {
         loadData();
     }, []);
 
-    const loadData = () => {
-        setUsers(Store.getUsers());
+    const loadData = async () => {
+        const remoteUsers = await Store.getAdminUsers();
+        setUsers(remoteUsers.length > 0 ? remoteUsers : Store.getUsers());
         setAnalytics(Store.getAnalytics());
         setPrompts(Store.getPrompts());
         setSettings(Store.getSettings());
@@ -52,8 +53,13 @@ export const AdminDashboard: React.FC = () => {
         }
     };
 
-    const toggleUserStatus = (userId: string, currentStatus: string) => {
+    const toggleUserStatus = async (userId: string, currentStatus: string) => {
         const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
+        const updated = await Store.updateAdminUserStatus(userId, newStatus);
+        if (updated) {
+            await loadData();
+            return;
+        }
         Store.updateUserStatus(userId, newStatus);
         setUsers(Store.getUsers());
     };

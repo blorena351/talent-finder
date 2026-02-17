@@ -16,6 +16,9 @@ Copy `.env.example` to `.env.local` and set:
 - `PORT`: server port (default `8787`)
 - `VITE_API_BASE_URL`: keep empty in local/dev when using same server/proxy
 - `VITE_ENABLE_DEMO`: `false` in production
+- `ADMIN_EMAIL`: admin account email for backoffice
+- `ADMIN_PASSWORD`: admin account password for backoffice
+- `SHOW_VERIFICATION_CODE`: set `true` only in non-production for email-code debug
 
 ## Run Locally
 
@@ -50,3 +53,9 @@ Copy `.env.example` to `.env.local` and set:
 - Never expose `GEMINI_API_KEY` to client-side code.
 - Restrict CORS to your domain before public launch.
 - Add rate limiting + auth middleware for public traffic.
+
+## Backoffice (Admin)
+
+- Login with `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
+- In admin dashboard, users are loaded from the server-side user database (`/api/admin/users`).
+- User status changes (active/suspended) are persisted server-side.
