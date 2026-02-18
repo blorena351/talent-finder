@@ -7,6 +7,7 @@ import { User, Job, Application, Store } from '../services/store';
 import { PlusIcon, BriefcaseIcon, UserGroupIcon, VideoCameraIcon, DocumentTextIcon, CheckBadgeIcon, ArrowUpTrayIcon, ClockIcon, PlayCircleIcon, FunnelIcon, MagnifyingGlassIcon, BuildingOfficeIcon, SparklesIcon, LockClosedIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
 import { AdminDashboard } from './AdminDashboard';
 import { CompanySettings } from './CompanySettings';
+import { useI18n } from '../services/i18n';
 
 interface DashboardProps {
   user: User;
@@ -14,26 +15,67 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) => {
+  const { language } = useI18n();
+  const tr = (en: string, pt: string, es: string) => (language === 'pt-PT' ? pt : language === 'es' ? es : en);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [myApplications, setMyApplications] = useState<Application[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedApp, setSelectedApp] = useState<Application | null>(null);
   const [showCreateJob, setShowCreateJob] = useState(false);
+  const [showEditJobAIModal, setShowEditJobAIModal] = useState(false);
+  const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [newJobForm, setNewJobForm] = useState<{
     title: string;
     description: string;
     requirements: string;
     skills: string;
+    executionAreasText: string;
+    workType: 'Remote' | 'Hybrid' | 'On-site';
+    geography: string;
+    contractType: 'Full-time' | 'Part-time' | 'Contract' | 'Freelance';
+    seniority: 'Junior' | 'Mid' | 'Senior' | 'Lead';
+    salaryMin: string;
+    salaryMax: string;
+    requiredLanguagesText: string;
+    mustHaveSkillsText: string;
+    niceToHaveSkillsText: string;
     interviewStyle: 'Technical' | 'Behavioral' | 'Mixed' | 'Casual';
+    aiTone: 'Professional' | 'Friendly' | 'Neutral' | 'Energetic' | 'Calm';
+    priorityQuestionsText: string;
+    transcriptWeight: number;
   }>({ 
     title: '', 
     description: '', 
     requirements: '', 
     skills: '',
-    interviewStyle: 'Mixed'
+    executionAreasText: '',
+    workType: 'Hybrid',
+    geography: '',
+    contractType: 'Full-time',
+    seniority: 'Mid',
+    salaryMin: '',
+    salaryMax: '',
+    requiredLanguagesText: '',
+    mustHaveSkillsText: '',
+    niceToHaveSkillsText: '',
+    interviewStyle: 'Mixed',
+    aiTone: 'Professional',
+    priorityQuestionsText: '',
+    transcriptWeight: 85
   });
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [editJobAIForm, setEditJobAIForm] = useState<{
+    aiTone: 'Professional' | 'Friendly' | 'Neutral' | 'Energetic' | 'Calm';
+    priorityQuestionsText: string;
+    transcriptWeight: number;
+    applyToExistingApplications: boolean;
+  }>({
+    aiTone: 'Professional',
+    priorityQuestionsText: '',
+    transcriptWeight: 85,
+    applyToExistingApplications: false,
+  });
   
   // Company Dashboard View State
   const [companyView, setCompanyView] = useState<'dashboard' | 'settings'>('dashboard');
@@ -53,10 +95,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
   
   // Filter States
   const [filterStatus, setFilterStatus] = useState<'all' | 'high_match' | 'reviewed'>('all');
+  const [filterExecutionLevel, setFilterExecutionLevel] = useState<'all' | 'high' | 'medium' | 'low'>('all');
+  const [filterCandidateCountry, setFilterCandidateCountry] = useState<string>('all');
+  const [filterCandidateArea, setFilterCandidateArea] = useState<string>('all');
+  const [filterCandidateSeniority, setFilterCandidateSeniority] = useState<'all' | 'Junior' | 'Mid' | 'Senior' | 'Lead'>('all');
+  const [filterCandidateAvailability, setFilterCandidateAvailability] = useState<'all' | 'Immediate' | '2 Weeks' | '1 Month' | '2+ Months'>('all');
+  const [filterCandidateContractType, setFilterCandidateContractType] = useState<'all' | 'Full-time' | 'Part-time' | 'Contract' | 'Freelance'>('all');
+  const [filterCandidateLanguage, setFilterCandidateLanguage] = useState<string>('all');
+  const [filterCandidateSalary, setFilterCandidateSalary] = useState<'all' | 'within_budget' | 'above_budget'>('all');
   
   // Applicant specific state
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [activeTab, setActiveTab] = useState<'jobs' | 'applications'>('jobs');
+  const [jobFilterWorkType, setJobFilterWorkType] = useState<'all' | 'Remote' | 'Hybrid' | 'On-site'>('all');
+  const [jobFilterGeography, setJobFilterGeography] = useState<string>('all');
+  const [jobFilterArea, setJobFilterArea] = useState<string>('all');
+  const [jobFilterContractType, setJobFilterContractType] = useState<'all' | 'Full-time' | 'Part-time' | 'Contract' | 'Freelance'>('all');
+  const [jobFilterSeniority, setJobFilterSeniority] = useState<'all' | 'Junior' | 'Mid' | 'Senior' | 'Lead'>('all');
+  const [jobFilterAvailabilityFit, setJobFilterAvailabilityFit] = useState<'all' | 'quick'>('all');
+  const [jobFilterSalaryFit, setJobFilterSalaryFit] = useState<'all' | 'fit'>('all');
+  const [jobFilterLanguage, setJobFilterLanguage] = useState<string>('all');
+  const [jobFilterMustHave, setJobFilterMustHave] = useState<string>('all');
 
   useEffect(() => {
     refreshData();
@@ -64,10 +123,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
 
   const refreshData = () => {
     const allJobs = Store.getJobs();
-    setJobs(allJobs);
     const allApps = Store.getApplications();
     
     if (user.role === 'company') {
+      const companyJobs = allJobs.filter(job => job.companyId === user.id);
+      setJobs(companyJobs);
       // Filter for company's jobs
       const companyApps = allApps.filter(app => {
         const job = allJobs.find(j => j.id === app.jobId);
@@ -75,6 +135,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
       });
       setApplications(companyApps);
     } else if (user.role === 'applicant') {
+      setJobs(allJobs);
       // Filter for applicant's applications
       const myApps = allApps.filter(app => app.applicantId === user.id);
       setMyApplications(myApps);
@@ -87,13 +148,58 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
         alert("Action disabled in Demo Mode.");
         return;
     }
-    await Store.createJob({ 
-        ...newJobForm, 
+    const createdJob = await Store.createJob({
+        title: newJobForm.title,
+        description: newJobForm.description,
+        requirements: newJobForm.requirements,
         skills: newJobForm.skills.split(',').map(s => s.trim()).filter(s => s),
-        companyId: user.id 
+        executionAreas: newJobForm.executionAreasText.split(',').map(s => s.trim()).filter(Boolean),
+        workType: newJobForm.workType,
+        geography: newJobForm.geography.trim(),
+        contractType: newJobForm.contractType,
+        seniority: newJobForm.seniority,
+        salaryMin: newJobForm.salaryMin ? parseInt(newJobForm.salaryMin) : undefined,
+        salaryMax: newJobForm.salaryMax ? parseInt(newJobForm.salaryMax) : undefined,
+        requiredLanguages: newJobForm.requiredLanguagesText.split(',').map(s => s.trim()).filter(Boolean),
+        mustHaveSkills: newJobForm.mustHaveSkillsText.split(',').map(s => s.trim()).filter(Boolean),
+        niceToHaveSkills: newJobForm.niceToHaveSkillsText.split(',').map(s => s.trim()).filter(Boolean),
+        interviewStyle: newJobForm.interviewStyle,
+        companyId: user.id
+    });
+    const priorityQuestions = newJobForm.priorityQuestionsText
+      .split('\n')
+      .map(q => q.trim())
+      .filter(Boolean);
+    await Store.saveJobAISettings(createdJob.id, {
+      tone: newJobForm.aiTone,
+      priorityQuestions,
+      autoFollowUp: true,
+      scoringWeights: {
+        transcript: newJobForm.transcriptWeight,
+        video: 100 - newJobForm.transcriptWeight,
+      },
     });
     setShowCreateJob(false);
-    setNewJobForm({ title: '', description: '', requirements: '', skills: '', interviewStyle: 'Mixed' });
+    setNewJobForm({
+      title: '',
+      description: '',
+      requirements: '',
+      skills: '',
+      executionAreasText: '',
+      workType: 'Hybrid',
+      geography: '',
+      contractType: 'Full-time',
+      seniority: 'Mid',
+      salaryMin: '',
+      salaryMax: '',
+      requiredLanguagesText: '',
+      mustHaveSkillsText: '',
+      niceToHaveSkillsText: '',
+      interviewStyle: 'Mixed',
+      aiTone: 'Professional',
+      priorityQuestionsText: '',
+      transcriptWeight: 85,
+    });
     refreshData();
   };
   
@@ -112,6 +218,55 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
           });
           setShowProfileModal(true);
       }
+  };
+
+  const handleOpenJobAISettings = (job: Job) => {
+    const settings = Store.getJobAISettings(job.id);
+    setEditingJob(job);
+    setEditJobAIForm({
+      aiTone: settings.tone,
+      priorityQuestionsText: settings.priorityQuestions.join('\n'),
+      transcriptWeight: settings.scoringWeights?.transcript ?? 85,
+      applyToExistingApplications: false,
+    });
+    setShowEditJobAIModal(true);
+  };
+
+  const handleSaveJobAISettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingJob) return;
+    if (user.isDemo) {
+      alert("Settings updates are disabled in Demo Mode.");
+      return;
+    }
+
+    const existingSettings = Store.getJobAISettings(editingJob.id);
+    const priorityQuestions = editJobAIForm.priorityQuestionsText
+      .split('\n')
+      .map(q => q.trim())
+      .filter(Boolean);
+
+    await Store.saveJobAISettings(editingJob.id, {
+      tone: editJobAIForm.aiTone,
+      priorityQuestions,
+      autoFollowUp: existingSettings.autoFollowUp,
+      scoringWeights: {
+        transcript: editJobAIForm.transcriptWeight,
+        video: 100 - editJobAIForm.transcriptWeight,
+      },
+    });
+
+    if (editJobAIForm.applyToExistingApplications) {
+      const updatedCount = await Store.recalculateApplicationScoresForJob(editingJob.id, {
+        transcript: editJobAIForm.transcriptWeight,
+        video: 100 - editJobAIForm.transcriptWeight,
+      });
+      alert(`Updated ranking score for ${updatedCount} existing application(s).`);
+    }
+
+    setShowEditJobAIModal(false);
+    setEditingJob(null);
+    refreshData();
   };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -158,14 +313,106 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
   const hasApplied = (jobId: string) => myApplications.some(app => app.jobId === jobId);
 
   // Filter Logic
+  const currentApplicantProfile = user.role === 'applicant' ? Store.getApplicantProfile(user.id) : undefined;
   const filteredApplications = applications.filter(app => {
     const matchesJob = !selectedJobId || app.jobId === selectedJobId;
     const matchesStatus = 
         filterStatus === 'all' ? true :
         filterStatus === 'high_match' ? app.matchScore >= 80 :
         filterStatus === 'reviewed' ? app.status === 'reviewed' : true;
-    return matchesJob && matchesStatus;
+    const matchesExecutionLevel =
+      filterExecutionLevel === 'all' ? true : app.executionLevel === filterExecutionLevel;
+    const applicantProfile = Store.getApplicantProfile(app.applicantId);
+    const applicantCountry = (applicantProfile?.country || '').trim();
+    const matchesCountry =
+      filterCandidateCountry === 'all' ? true : applicantCountry === filterCandidateCountry;
+    const hasArea = app.aiResume?.skills?.some(skill => skill.toLowerCase().includes(filterCandidateArea.toLowerCase()));
+    const matchesArea = filterCandidateArea === 'all' ? true : !!hasArea;
+    const matchesSeniority =
+      filterCandidateSeniority === 'all' ? true : applicantProfile?.seniority === filterCandidateSeniority;
+    const matchesAvailability =
+      filterCandidateAvailability === 'all' ? true : applicantProfile?.availability === filterCandidateAvailability;
+    const matchesContractType =
+      filterCandidateContractType === 'all'
+        ? true
+        : (applicantProfile?.preferredContractTypes || []).includes(filterCandidateContractType);
+    const matchesLanguage =
+      filterCandidateLanguage === 'all'
+        ? true
+        : (applicantProfile?.languages || []).some(l => l.toLowerCase().includes(filterCandidateLanguage.toLowerCase()));
+    const job = jobs.find(j => j.id === app.jobId);
+    const jobSalaryMax = job?.salaryMax || 0;
+    const candidateSalaryMin = applicantProfile?.salaryExpectationMin || 0;
+    const matchesSalary =
+      filterCandidateSalary === 'all'
+        ? true
+        : filterCandidateSalary === 'within_budget'
+        ? (jobSalaryMax > 0 && candidateSalaryMin > 0 ? candidateSalaryMin <= jobSalaryMax : true)
+        : (jobSalaryMax > 0 && candidateSalaryMin > 0 ? candidateSalaryMin > jobSalaryMax : false);
+    return matchesJob && matchesStatus && matchesExecutionLevel && matchesCountry && matchesArea && matchesSeniority && matchesAvailability && matchesContractType && matchesLanguage && matchesSalary;
   });
+  const sortedApplications = [...filteredApplications].sort((a, b) => {
+    const levelRank = (level?: 'high' | 'medium' | 'low') => (level === 'high' ? 3 : level === 'medium' ? 2 : 1);
+    const byLevel = levelRank(b.executionLevel) - levelRank(a.executionLevel);
+    if (byLevel !== 0) return byLevel;
+    return b.matchScore - a.matchScore;
+  });
+  const candidateCountries = Array.from(
+    new Set(
+      applications
+        .map(app => Store.getApplicantProfile(app.applicantId)?.country?.trim())
+        .filter((c): c is string => !!c)
+    )
+  );
+  const candidateAreas = Array.from(
+    new Set(
+      applications.flatMap(app => app.aiResume?.skills || [])
+    )
+  );
+  const candidateSeniorities = Array.from(
+    new Set(
+      applications.map(app => Store.getApplicantProfile(app.applicantId)?.seniority).filter(Boolean)
+    )
+  ) as ('Junior' | 'Mid' | 'Senior' | 'Lead')[];
+  const candidateLanguages = Array.from(
+    new Set(
+      applications.flatMap(app => Store.getApplicantProfile(app.applicantId)?.languages || [])
+    )
+  );
+  const filteredJobsForApplicant = jobs.filter(job => {
+    const matchesWorkType = jobFilterWorkType === 'all' ? true : (job.workType || 'Hybrid') === jobFilterWorkType;
+    const matchesGeography = jobFilterGeography === 'all' ? true : (job.geography || '').trim() === jobFilterGeography;
+    const matchesArea = jobFilterArea === 'all'
+      ? true
+      : (job.executionAreas || []).some(area => area.toLowerCase().includes(jobFilterArea.toLowerCase()));
+    const matchesContractType = jobFilterContractType === 'all' ? true : (job.contractType || 'Full-time') === jobFilterContractType;
+    const matchesSeniority = jobFilterSeniority === 'all' ? true : (job.seniority || 'Mid') === jobFilterSeniority;
+    const matchesAvailability =
+      jobFilterAvailabilityFit === 'all'
+        ? true
+        : !!currentApplicantProfile && ['Immediate', '2 Weeks'].includes(currentApplicantProfile.availability || '');
+    const candidateMin = currentApplicantProfile?.salaryExpectationMin || 0;
+    const jobMax = job.salaryMax || 0;
+    const matchesSalaryFit =
+      jobFilterSalaryFit === 'all'
+        ? true
+        : (candidateMin > 0 && jobMax > 0 ? candidateMin <= jobMax : true);
+    const matchesLanguage =
+      jobFilterLanguage === 'all'
+        ? true
+        : (job.requiredLanguages || []).some(l => l.toLowerCase().includes(jobFilterLanguage.toLowerCase()));
+    const matchesMustHave =
+      jobFilterMustHave === 'all'
+        ? true
+        : (job.mustHaveSkills || []).some(s => s.toLowerCase().includes(jobFilterMustHave.toLowerCase()));
+    return matchesWorkType && matchesGeography && matchesArea && matchesContractType && matchesSeniority && matchesAvailability && matchesSalaryFit && matchesLanguage && matchesMustHave;
+  });
+  const availableGeographies = Array.from(new Set(jobs.map(job => (job.geography || '').trim()).filter(Boolean)));
+  const availableAreas = Array.from(new Set(jobs.flatMap(job => job.executionAreas || [])));
+  const availableContractTypes = Array.from(new Set(jobs.map(job => job.contractType || 'Full-time')));
+  const availableSeniorities = Array.from(new Set(jobs.map(job => job.seniority || 'Mid')));
+  const availableLanguages = Array.from(new Set(jobs.flatMap(job => job.requiredLanguages || [])));
+  const availableMustHaves = Array.from(new Set(jobs.flatMap(job => job.mustHaveSkills || [])));
 
   // Shared Application Details Modal
   const renderApplicationModal = () => {
@@ -209,6 +456,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
                 </div>
 
                 <div className="space-y-8">
+                    {/* Scoring Breakdown */}
+                    <div className="bg-zinc-800/50 rounded-xl p-6 border border-zinc-700">
+                        <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider mb-4">Scoring Breakdown</h3>
+                        <div className="grid grid-cols-1 gap-3 text-sm">
+                            <div className="flex items-center justify-between text-zinc-300">
+                                <span>Transcript Score</span>
+                                <span>{selectedApp.transcriptMatchScore ?? selectedApp.matchScore}%</span>
+                            </div>
+                            <div className="flex items-center justify-between text-zinc-300">
+                                <span>Video Score</span>
+                                <span>{selectedApp.videoMatchScore ?? 50}%</span>
+                            </div>
+                            <div className="flex items-center justify-between text-zinc-300">
+                                <span>Weights</span>
+                                <span>
+                                    T {selectedApp.scoringWeights?.transcript ?? 85}% / V {selectedApp.scoringWeights?.video ?? 15}%
+                                </span>
+                            </div>
+                            <div className="pt-2 border-t border-zinc-700 flex items-center justify-between font-bold text-white">
+                                <span>Final Ranking Score</span>
+                                <span>{selectedApp.matchScore}%</span>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* AI Resume */}
                     <div className="bg-zinc-800/50 rounded-xl p-6 border border-zinc-700">
                         <h3 className="flex items-center gap-2 text-sm font-bold text-blue-400 uppercase tracking-wider mb-4">
@@ -252,6 +524,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
                             ))}
                             </div>
                     </div>
+
+                    {/* Video Analysis (separate from transcript-based summary) */}
+                    <div>
+                            <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-4">Video Analysis</h3>
+                            <div className="space-y-4">
+                            {selectedApp.videoAnalyses?.map((v, i) => (
+                                <div key={i} className="border-l-2 border-blue-700/50 pl-4 py-1">
+                                    <div className="text-xs text-zinc-500 mb-1">Q: {v.question}</div>
+                                    <div className="text-sm text-zinc-300">{v.summary}</div>
+                                    <div className="text-xs text-zinc-500 mt-1">Confidence: {v.confidence}%</div>
+                                </div>
+                            ))}
+                            {(!selectedApp.videoAnalyses || selectedApp.videoAnalyses.length === 0) && (
+                                <p className="text-zinc-500 text-sm">No video analysis available for this interview.</p>
+                            )}
+                            </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -263,7 +552,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
       return (
           <div className="bg-blue-600/10 border-b border-blue-500/20 text-center py-2 px-4 text-xs md:text-sm text-blue-300 font-medium flex items-center justify-center gap-2">
               <SparklesIcon className="w-4 h-4 text-yellow-500" />
-              You are viewing a demo version. Some features (saving, uploading) are limited.
+              {tr(
+                'You are viewing a demo version. Some features (saving, uploading) are limited.',
+                'Está a ver uma versão demo. Algumas funcionalidades (guardar, upload) estão limitadas.',
+                'Estás viendo una versión demo. Algunas funciones (guardar, subir archivos) están limitadas.'
+              )}
           </div>
       );
   };
@@ -289,8 +582,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
             {renderApplicationModal()}
             <div className="flex justify-between items-center mb-8">
                 <div>
-                    <h1 className="text-2xl font-bold text-white">Company Dashboard</h1>
-                    <p className="text-zinc-400">Manage jobs, review talent, and analyze interviews.</p>
+                    <h1 className="text-2xl font-bold text-white">{tr('Company Dashboard', 'Painel da Empresa', 'Panel de Empresa')}</h1>
+                    <p className="text-zinc-400">{tr('Manage jobs, review talent, and analyze interviews.', 'Gerir vagas, rever talento e analisar entrevistas.', 'Gestiona vacantes, revisa talento y analiza entrevistas.')}</p>
                 </div>
                 <div className="flex gap-3">
                     <button 
@@ -309,7 +602,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
                         onClick={() => setShowCreateJob(true)}
                         className={`text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-lg ${user.isDemo ? 'bg-zinc-700 cursor-not-allowed opacity-75' : 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/20'}`}
                     >
-                        <PlusIcon className="w-5 h-5" /> Post New Job
+                        <PlusIcon className="w-5 h-5" /> {tr('Post New Job', 'Publicar Nova Vaga', 'Publicar Nueva Vacante')}
                     </button>
                 </div>
             </div>
@@ -321,7 +614,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
                         <div className="flex items-center justify-between mb-4">
                             <h2 className="text-xl font-bold text-white flex items-center gap-2">
                                 <BuildingOfficeIcon className="w-6 h-6 text-blue-500" />
-                                Manage Profile
+                                {tr('Manage Profile', 'Gerir Perfil', 'Gestionar Perfil')}
                             </h2>
                             <button type="button" onClick={() => setShowProfileModal(false)} className="text-zinc-500 hover:text-white">✕</button>
                         </div>
@@ -377,8 +670,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
 
                         <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800">
                             {user.isDemo && <span className="text-xs text-yellow-500 mr-auto self-center">Read-only in Demo Mode</span>}
-                            <button type="button" onClick={() => setShowProfileModal(false)} className="text-zinc-400 hover:text-white px-4 py-2">Cancel</button>
-                            {!user.isDemo && <button type="submit" className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-medium shadow-lg shadow-blue-500/20">Save Changes</button>}
+                            <button type="button" onClick={() => setShowProfileModal(false)} className="text-zinc-400 hover:text-white px-4 py-2">{tr('Cancel', 'Cancelar', 'Cancelar')}</button>
+                            {!user.isDemo && <button type="submit" className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-medium shadow-lg shadow-blue-500/20">{tr('Save Changes', 'Guardar Alterações', 'Guardar Cambios')}</button>}
                         </div>
                     </form>
                 </div>
@@ -401,6 +694,61 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
                                     value={newJobForm.skills} onChange={e => setNewJobForm({...newJobForm, skills: e.target.value})} placeholder="React, Node.js, UX" />
                             </div>
                             <div className="col-span-2 md:col-span-1">
+                                <label className="block text-zinc-400 text-sm mb-1">Execution Areas (comma separated)</label>
+                                <input type="text" className="w-full bg-zinc-800 border border-zinc-700 rounded p-2 text-white focus:border-blue-500 outline-none transition-all" 
+                                    value={newJobForm.executionAreasText} onChange={e => setNewJobForm({...newJobForm, executionAreasText: e.target.value})} placeholder="Frontend, Product, Data" />
+                            </div>
+                            <div className="col-span-2 md:col-span-1">
+                                <label className="block text-zinc-400 text-sm mb-1">Work Type</label>
+                                <select className="w-full bg-zinc-800 border border-zinc-700 rounded p-2 text-white focus:border-blue-500 outline-none transition-all"
+                                    value={newJobForm.workType}
+                                    onChange={e => setNewJobForm({...newJobForm, workType: e.target.value as any})}
+                                >
+                                    <option value="Remote">Remote</option>
+                                    <option value="Hybrid">Hybrid</option>
+                                    <option value="On-site">On-site</option>
+                                </select>
+                            </div>
+                            <div className="col-span-2 md:col-span-1">
+                                <label className="block text-zinc-400 text-sm mb-1">Geography</label>
+                                <input type="text" className="w-full bg-zinc-800 border border-zinc-700 rounded p-2 text-white focus:border-blue-500 outline-none transition-all" 
+                                    value={newJobForm.geography} onChange={e => setNewJobForm({...newJobForm, geography: e.target.value})} placeholder="Portugal, Spain, EU..." />
+                            </div>
+                            <div className="col-span-2 md:col-span-1">
+                                <label className="block text-zinc-400 text-sm mb-1">Contract Type</label>
+                                <select className="w-full bg-zinc-800 border border-zinc-700 rounded p-2 text-white focus:border-blue-500 outline-none transition-all"
+                                    value={newJobForm.contractType}
+                                    onChange={e => setNewJobForm({...newJobForm, contractType: e.target.value as any})}
+                                >
+                                    <option value="Full-time">Full-time</option>
+                                    <option value="Part-time">Part-time</option>
+                                    <option value="Contract">Contract</option>
+                                    <option value="Freelance">Freelance</option>
+                                </select>
+                            </div>
+                            <div className="col-span-2 md:col-span-1">
+                                <label className="block text-zinc-400 text-sm mb-1">Seniority</label>
+                                <select className="w-full bg-zinc-800 border border-zinc-700 rounded p-2 text-white focus:border-blue-500 outline-none transition-all"
+                                    value={newJobForm.seniority}
+                                    onChange={e => setNewJobForm({...newJobForm, seniority: e.target.value as any})}
+                                >
+                                    <option value="Junior">Junior</option>
+                                    <option value="Mid">Mid</option>
+                                    <option value="Senior">Senior</option>
+                                    <option value="Lead">Lead</option>
+                                </select>
+                            </div>
+                            <div className="col-span-2 md:col-span-1">
+                                <label className="block text-zinc-400 text-sm mb-1">Salary Min (year)</label>
+                                <input type="number" min="0" className="w-full bg-zinc-800 border border-zinc-700 rounded p-2 text-white focus:border-blue-500 outline-none transition-all" 
+                                    value={newJobForm.salaryMin} onChange={e => setNewJobForm({...newJobForm, salaryMin: e.target.value})} />
+                            </div>
+                            <div className="col-span-2 md:col-span-1">
+                                <label className="block text-zinc-400 text-sm mb-1">Salary Max (year)</label>
+                                <input type="number" min="0" className="w-full bg-zinc-800 border border-zinc-700 rounded p-2 text-white focus:border-blue-500 outline-none transition-all" 
+                                    value={newJobForm.salaryMax} onChange={e => setNewJobForm({...newJobForm, salaryMax: e.target.value})} />
+                            </div>
+                            <div className="col-span-2 md:col-span-1">
                                 <label className="block text-zinc-400 text-sm mb-1">Interview Style</label>
                                 <select className="w-full bg-zinc-800 border border-zinc-700 rounded p-2 text-white focus:border-blue-500 outline-none transition-all"
                                     value={newJobForm.interviewStyle} 
@@ -410,6 +758,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
                                     <option value="Technical">Technical Focus</option>
                                     <option value="Behavioral">Behavioral (STAR)</option>
                                     <option value="Casual">Casual / Culture Fit</option>
+                                </select>
+                            </div>
+                            <div className="col-span-2 md:col-span-1">
+                                <label className="block text-zinc-400 text-sm mb-1">AI Tone (this job)</label>
+                                <select
+                                    className="w-full bg-zinc-800 border border-zinc-700 rounded p-2 text-white focus:border-blue-500 outline-none transition-all"
+                                    value={newJobForm.aiTone}
+                                    onChange={e => setNewJobForm({ ...newJobForm, aiTone: e.target.value as any })}
+                                >
+                                    {['Professional', 'Friendly', 'Neutral', 'Energetic', 'Calm'].map(o => (
+                                        <option key={o} value={o}>{o}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="col-span-2">
@@ -422,10 +782,121 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
                                 <textarea required className="w-full bg-zinc-800 border border-zinc-700 rounded p-2 text-white focus:border-blue-500 outline-none h-24" 
                                     value={newJobForm.requirements} onChange={e => setNewJobForm({...newJobForm, requirements: e.target.value})} placeholder="Detailed requirements used by AI to generate questions..." />
                             </div>
+                            <div className="col-span-2">
+                                <label className="block text-zinc-400 text-sm mb-1">Required Languages (comma separated)</label>
+                                <input type="text" className="w-full bg-zinc-800 border border-zinc-700 rounded p-2 text-white focus:border-blue-500 outline-none transition-all"
+                                    value={newJobForm.requiredLanguagesText}
+                                    onChange={e => setNewJobForm({ ...newJobForm, requiredLanguagesText: e.target.value })}
+                                    placeholder="English (C1), Portuguese (B2)"
+                                />
+                            </div>
+                            <div className="col-span-2">
+                                <label className="block text-zinc-400 text-sm mb-1">Must-have Skills (comma separated)</label>
+                                <input type="text" className="w-full bg-zinc-800 border border-zinc-700 rounded p-2 text-white focus:border-blue-500 outline-none transition-all"
+                                    value={newJobForm.mustHaveSkillsText}
+                                    onChange={e => setNewJobForm({ ...newJobForm, mustHaveSkillsText: e.target.value })}
+                                    placeholder="React, TypeScript, SQL"
+                                />
+                            </div>
+                            <div className="col-span-2">
+                                <label className="block text-zinc-400 text-sm mb-1">Nice-to-have Skills (comma separated)</label>
+                                <input type="text" className="w-full bg-zinc-800 border border-zinc-700 rounded p-2 text-white focus:border-blue-500 outline-none transition-all"
+                                    value={newJobForm.niceToHaveSkillsText}
+                                    onChange={e => setNewJobForm({ ...newJobForm, niceToHaveSkillsText: e.target.value })}
+                                    placeholder="Design Systems, Docker"
+                                />
+                            </div>
+                            <div className="col-span-2">
+                                <label className="block text-zinc-400 text-sm mb-1">Priority Questions (one per line)</label>
+                                <textarea
+                                    className="w-full bg-zinc-800 border border-zinc-700 rounded p-2 text-white focus:border-blue-500 outline-none h-24"
+                                    value={newJobForm.priorityQuestionsText}
+                                    onChange={e => setNewJobForm({ ...newJobForm, priorityQuestionsText: e.target.value })}
+                                    placeholder="Example: Tell us about a project where you reduced production incidents."
+                                />
+                            </div>
+                            <div className="col-span-2">
+                                <label className="block text-zinc-400 text-sm mb-1">
+                                    Ranking Weights: Transcript {newJobForm.transcriptWeight}% / Video {100 - newJobForm.transcriptWeight}%
+                                </label>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="100"
+                                    value={newJobForm.transcriptWeight}
+                                    onChange={e => setNewJobForm({ ...newJobForm, transcriptWeight: parseInt(e.target.value) })}
+                                    className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                />
+                                <p className="text-xs text-zinc-500 mt-2">Final ranking score uses these weights for this specific job.</p>
+                            </div>
                         </div>
                         <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800">
-                            <button type="button" onClick={() => setShowCreateJob(false)} className="text-zinc-400 hover:text-white px-4 py-2">Cancel</button>
-                            <button type="submit" className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded">Create Listing</button>
+                            <button type="button" onClick={() => setShowCreateJob(false)} className="text-zinc-400 hover:text-white px-4 py-2">{tr('Cancel', 'Cancelar', 'Cancelar')}</button>
+                            <button type="submit" className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded">{tr('Create Listing', 'Criar Vaga', 'Crear Vacante')}</button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
+            {/* Edit Existing Job AI Settings Modal */}
+            {showEditJobAIModal && editingJob && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <form onSubmit={handleSaveJobAISettings} className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 w-full max-w-xl space-y-4 max-h-[90vh] overflow-y-auto">
+                        <h2 className="text-xl font-bold text-white mb-1">Edit AI Settings</h2>
+                        <p className="text-sm text-zinc-500 mb-3">Job: {editingJob.title}</p>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="col-span-2">
+                                <label className="block text-zinc-400 text-sm mb-1">AI Tone (this job)</label>
+                                <select
+                                    className="w-full bg-zinc-800 border border-zinc-700 rounded p-2 text-white focus:border-blue-500 outline-none transition-all"
+                                    value={editJobAIForm.aiTone}
+                                    onChange={e => setEditJobAIForm({ ...editJobAIForm, aiTone: e.target.value as any })}
+                                >
+                                    {['Professional', 'Friendly', 'Neutral', 'Energetic', 'Calm'].map(o => (
+                                        <option key={o} value={o}>{o}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="col-span-2">
+                                <label className="block text-zinc-400 text-sm mb-1">Priority Questions (one per line)</label>
+                                <textarea
+                                    className="w-full bg-zinc-800 border border-zinc-700 rounded p-2 text-white focus:border-blue-500 outline-none h-24"
+                                    value={editJobAIForm.priorityQuestionsText}
+                                    onChange={e => setEditJobAIForm({ ...editJobAIForm, priorityQuestionsText: e.target.value })}
+                                />
+                            </div>
+                            <div className="col-span-2">
+                                <label className="block text-zinc-400 text-sm mb-1">
+                                    Ranking Weights: Transcript {editJobAIForm.transcriptWeight}% / Video {100 - editJobAIForm.transcriptWeight}%
+                                </label>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="100"
+                                    value={editJobAIForm.transcriptWeight}
+                                    onChange={e => setEditJobAIForm({ ...editJobAIForm, transcriptWeight: parseInt(e.target.value) })}
+                                    className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                                />
+                            </div>
+                            <div className="col-span-2">
+                                <label className="flex items-center gap-2 text-sm text-zinc-300">
+                                    <input
+                                        type="checkbox"
+                                        checked={editJobAIForm.applyToExistingApplications}
+                                        onChange={e => setEditJobAIForm({ ...editJobAIForm, applyToExistingApplications: e.target.checked })}
+                                        className="accent-blue-500"
+                                    />
+                                    Apply new weights to existing applications for this job
+                                </label>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800">
+                            <button type="button" onClick={() => { setShowEditJobAIModal(false); setEditingJob(null); }} className="text-zinc-400 hover:text-white px-4 py-2">
+                                {tr('Cancel', 'Cancelar', 'Cancelar')}
+                            </button>
+                            <button type="submit" className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded">
+                                Save AI Settings
+                            </button>
                         </div>
                     </form>
                 </div>
@@ -437,7 +908,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
                 <div className="lg:col-span-1 space-y-4">
                     <div className="flex items-center justify-between mb-2">
                         <h3 className="text-lg font-medium text-zinc-300 flex items-center gap-2">
-                            <BriefcaseIcon className="w-5 h-5"/> Active Jobs
+                            <BriefcaseIcon className="w-5 h-5"/> {tr('Active Jobs', 'Vagas Ativas', 'Vacantes Activas')}
                         </h3>
                         <button 
                             onClick={() => setSelectedJobId(null)} 
@@ -454,7 +925,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
                                 className={`p-4 rounded-xl border cursor-pointer transition-all duration-200 group ${selectedJobId === job.id ? 'bg-zinc-800 border-blue-500 shadow-lg' : 'bg-zinc-900/50 border-zinc-800 hover:bg-zinc-800 hover:border-zinc-600'}`}>
                                 <div className="flex justify-between items-start mb-2">
                                     <h4 className={`font-bold transition-colors ${selectedJobId === job.id ? 'text-white' : 'text-zinc-200 group-hover:text-white'}`}>{job.title}</h4>
-                                    <span className="text-[10px] uppercase font-mono text-zinc-500 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">{job.interviewStyle || 'Standard'}</span>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleOpenJobAISettings(job);
+                                            }}
+                                            className="text-[10px] uppercase font-mono text-blue-400 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-700 hover:border-blue-500"
+                                        >
+                                            AI
+                                        </button>
+                                        <span className="text-[10px] uppercase font-mono text-zinc-500 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">{job.interviewStyle || 'Standard'}</span>
+                                    </div>
                                 </div>
                                 <p className="text-sm text-zinc-500 truncate mb-3">{job.description}</p>
                                 
@@ -477,8 +960,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-zinc-900/50 p-4 rounded-xl border border-zinc-800">
                         <div>
                             <h3 className="text-lg font-medium text-zinc-300 flex items-center gap-2">
-                                <UserGroupIcon className="w-5 h-5"/> Applicants
-                                {selectedJobId && <span className="text-sm font-normal text-zinc-500 ml-2">(Filtered by selected job)</span>}
+                                <UserGroupIcon className="w-5 h-5"/> {tr('Applicants', 'Candidatos', 'Candidatos')}
+                                {selectedJobId && <span className="text-sm font-normal text-zinc-500 ml-2">({tr('Filtered by selected job', 'Filtrado pela vaga selecionada', 'Filtrado por vacante seleccionada')})</span>}
                             </h3>
                         </div>
                         
@@ -490,15 +973,96 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
                                 value={filterStatus}
                                 onChange={(e) => setFilterStatus(e.target.value as any)}
                             >
-                                <option value="all">All Candidates</option>
-                                <option value="high_match">High Match (&gt;80%)</option>
-                                <option value="reviewed">Reviewed Only</option>
+                                <option value="all">{tr('All Candidates', 'Todos os Candidatos', 'Todos los Candidatos')}</option>
+                                <option value="high_match">{tr('High Match (>80%)', 'Alta Compatibilidade (>80%)', 'Alta Compatibilidad (>80%)')}</option>
+                                <option value="reviewed">{tr('Reviewed Only', 'Apenas Revistos', 'Solo Revisados')}</option>
+                            </select>
+                            <select
+                                className="bg-zinc-800 text-sm text-zinc-300 border border-zinc-700 rounded-lg px-3 py-1.5 focus:border-blue-500 outline-none"
+                                value={filterExecutionLevel}
+                                onChange={(e) => setFilterExecutionLevel(e.target.value as any)}
+                            >
+                                <option value="all">Exec: All</option>
+                                <option value="high">Exec: High</option>
+                                <option value="medium">Exec: Medium</option>
+                                <option value="low">Exec: Low</option>
+                            </select>
+                            <select
+                                className="bg-zinc-800 text-sm text-zinc-300 border border-zinc-700 rounded-lg px-3 py-1.5 focus:border-blue-500 outline-none"
+                                value={filterCandidateCountry}
+                                onChange={(e) => setFilterCandidateCountry(e.target.value)}
+                            >
+                                <option value="all">Country: All</option>
+                                {candidateCountries.map((country) => (
+                                  <option key={country} value={country}>{country}</option>
+                                ))}
+                            </select>
+                            <select
+                                className="bg-zinc-800 text-sm text-zinc-300 border border-zinc-700 rounded-lg px-3 py-1.5 focus:border-blue-500 outline-none"
+                                value={filterCandidateArea}
+                                onChange={(e) => setFilterCandidateArea(e.target.value)}
+                            >
+                                <option value="all">Area: All</option>
+                                {candidateAreas.map((area) => (
+                                  <option key={area} value={area}>{area}</option>
+                                ))}
+                            </select>
+                            <select
+                                className="bg-zinc-800 text-sm text-zinc-300 border border-zinc-700 rounded-lg px-3 py-1.5 focus:border-blue-500 outline-none"
+                                value={filterCandidateSeniority}
+                                onChange={(e) => setFilterCandidateSeniority(e.target.value as any)}
+                            >
+                                <option value="all">Seniority: All</option>
+                                {candidateSeniorities.map((s) => (
+                                  <option key={s} value={s}>{s}</option>
+                                ))}
+                            </select>
+                            <select
+                                className="bg-zinc-800 text-sm text-zinc-300 border border-zinc-700 rounded-lg px-3 py-1.5 focus:border-blue-500 outline-none"
+                                value={filterCandidateAvailability}
+                                onChange={(e) => setFilterCandidateAvailability(e.target.value as any)}
+                            >
+                                <option value="all">Availability: All</option>
+                                <option value="Immediate">Immediate</option>
+                                <option value="2 Weeks">2 Weeks</option>
+                                <option value="1 Month">1 Month</option>
+                                <option value="2+ Months">2+ Months</option>
+                            </select>
+                            <select
+                                className="bg-zinc-800 text-sm text-zinc-300 border border-zinc-700 rounded-lg px-3 py-1.5 focus:border-blue-500 outline-none"
+                                value={filterCandidateContractType}
+                                onChange={(e) => setFilterCandidateContractType(e.target.value as any)}
+                            >
+                                <option value="all">Contract: All</option>
+                                <option value="Full-time">Full-time</option>
+                                <option value="Part-time">Part-time</option>
+                                <option value="Contract">Contract</option>
+                                <option value="Freelance">Freelance</option>
+                            </select>
+                            <select
+                                className="bg-zinc-800 text-sm text-zinc-300 border border-zinc-700 rounded-lg px-3 py-1.5 focus:border-blue-500 outline-none"
+                                value={filterCandidateLanguage}
+                                onChange={(e) => setFilterCandidateLanguage(e.target.value)}
+                            >
+                                <option value="all">Language: All</option>
+                                {candidateLanguages.map((lang) => (
+                                  <option key={lang} value={lang}>{lang}</option>
+                                ))}
+                            </select>
+                            <select
+                                className="bg-zinc-800 text-sm text-zinc-300 border border-zinc-700 rounded-lg px-3 py-1.5 focus:border-blue-500 outline-none"
+                                value={filterCandidateSalary}
+                                onChange={(e) => setFilterCandidateSalary(e.target.value as any)}
+                            >
+                                <option value="all">Salary: All</option>
+                                <option value="within_budget">Within budget</option>
+                                <option value="above_budget">Above budget</option>
                             </select>
                         </div>
                     </div>
 
                     <div className="grid grid-cols-1 gap-3">
-                        {filteredApplications.map(app => (
+                        {sortedApplications.map(app => (
                             <div key={app.id} 
                                 onClick={() => handleViewApp(app)} 
                                 className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl hover:border-zinc-600 cursor-pointer flex flex-col sm:flex-row justify-between items-center group transition-all hover:bg-zinc-800/50">
@@ -510,10 +1074,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
                                     </div>
                                     <div>
                                         <h4 className="font-bold text-white group-hover:text-blue-400 transition-colors">{app.applicantName}</h4>
+                                        <div className="text-[10px] uppercase tracking-wider mt-1">
+                                            <span className={`px-2 py-0.5 rounded-full border ${
+                                                app.executionLevel === 'high'
+                                                  ? 'text-green-400 border-green-700/60 bg-green-900/20'
+                                                  : app.executionLevel === 'medium'
+                                                  ? 'text-yellow-400 border-yellow-700/60 bg-yellow-900/20'
+                                                  : 'text-red-400 border-red-700/60 bg-red-900/20'
+                                            }`}>
+                                                {(app.executionLevel || 'low').toUpperCase()} EXECUTION
+                                            </span>
+                                        </div>
                                         <div className="flex items-center gap-2 text-xs text-zinc-500 mt-1">
                                             <ClockIcon className="w-3 h-3" />
                                             <span>Applied {new Date(app.timestamp).toLocaleDateString()}</span>
                                         </div>
+                                        {app.aiResume?.summary && (
+                                            <p className="text-xs text-zinc-400 mt-2 line-clamp-2 max-w-xl">{app.aiResume.summary}</p>
+                                        )}
                                     </div>
                                 </div>
 
@@ -522,7 +1100,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
                                         <div className={`text-xl font-bold ${app.matchScore > 80 ? 'text-green-500' : app.matchScore > 60 ? 'text-yellow-500' : 'text-zinc-500'}`}>
                                             {app.matchScore}%
                                         </div>
-                                        <div className="text-[10px] text-zinc-600 uppercase tracking-wider font-medium">Match Score</div>
+                                        <div className="text-[10px] text-zinc-600 uppercase tracking-wider font-medium">{tr('Match Score', 'Pontuação', 'Puntuación')}</div>
                                     </div>
                                     <div className="h-8 w-px bg-zinc-800 hidden sm:block"></div>
                                     <div className="text-zinc-500 group-hover:text-white transition-colors">
@@ -532,10 +1110,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
                             </div>
                         ))}
                         
-                        {filteredApplications.length === 0 && (
+                        {sortedApplications.length === 0 && (
                             <div className="flex flex-col items-center justify-center py-16 bg-zinc-900/30 rounded-xl border border-dashed border-zinc-800 text-zinc-500">
                                 <MagnifyingGlassIcon className="w-10 h-10 mb-3 opacity-20" />
-                                <p>No applicants found matching the current filters.</p>
+                                <p>{tr('No applicants found matching the current filters.', 'Sem candidatos para os filtros atuais.', 'No hay candidatos para los filtros actuales.')}</p>
                             </div>
                         )}
                     </div>
@@ -556,8 +1134,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
         
         {/* Header */}
         <div className="mb-8">
-            <h1 className="text-3xl font-bold text-white mb-2">Welcome, {user.name}</h1>
-            <p className="text-zinc-400">Manage your profile and find your next role.</p>
+            <h1 className="text-3xl font-bold text-white mb-2">{tr('Welcome,', 'Bem-vindo,', 'Bienvenido,')} {user.name}</h1>
+            <p className="text-zinc-400">{tr('Manage your profile and find your next role.', 'Gira o seu perfil e encontre o seu próximo cargo.', 'Gestiona tu perfil y encuentra tu próximo puesto.')}</p>
         </div>
 
         {/* Resume Upload Card */}
@@ -607,52 +1185,152 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onStartInterview }) 
 
         {/* Jobs Tab */}
         {activeTab === 'jobs' && (
-            <div className="grid gap-6 animate-in slide-in-from-bottom-4 fade-in duration-500">
-                {jobs.map(job => {
-                    const applied = hasApplied(job.id);
-                    return (
-                        <div key={job.id} className={`bg-zinc-900 border rounded-xl p-6 transition-all ${applied ? 'border-zinc-800 opacity-75' : 'border-zinc-800 hover:border-zinc-600 shadow-md'}`}>
-                            <div className="flex flex-col md:flex-row justify-between md:items-start gap-4 mb-4">
-                                <div>
-                                    <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                                        {job.title}
-                                        {applied && <span className="bg-zinc-800 text-zinc-400 text-xs px-2 py-1 rounded border border-zinc-700">Applied</span>}
-                                    </h3>
-                                    <p className="text-sm text-blue-400 font-mono mt-1 mb-2">{job.companyId}</p>
-                                    <p className="text-zinc-400 text-sm leading-relaxed max-w-2xl">{job.description}</p>
-                                    
-                                    {/* Skills for Applicant View */}
-                                    <div className="flex flex-wrap gap-2 mt-3">
-                                        {job.skills?.map((skill, i) => (
-                                            <span key={i} className="text-xs px-2 py-1 bg-zinc-800 text-zinc-400 rounded-full border border-zinc-700">
-                                                {skill}
-                                            </span>
-                                        ))}
+            <>
+                <div className="bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 mb-4 flex flex-wrap gap-2">
+                    <select
+                        className="bg-zinc-800 text-sm text-zinc-300 border border-zinc-700 rounded-lg px-3 py-1.5 focus:border-blue-500 outline-none"
+                        value={jobFilterWorkType}
+                        onChange={(e) => setJobFilterWorkType(e.target.value as any)}
+                    >
+                        <option value="all">Work Type: All</option>
+                        <option value="Remote">Remote</option>
+                        <option value="Hybrid">Hybrid</option>
+                        <option value="On-site">On-site</option>
+                    </select>
+                    <select
+                        className="bg-zinc-800 text-sm text-zinc-300 border border-zinc-700 rounded-lg px-3 py-1.5 focus:border-blue-500 outline-none"
+                        value={jobFilterGeography}
+                        onChange={(e) => setJobFilterGeography(e.target.value)}
+                    >
+                        <option value="all">Geography: All</option>
+                        {availableGeographies.map((geo) => (
+                          <option key={geo} value={geo}>{geo}</option>
+                        ))}
+                    </select>
+                    <select
+                        className="bg-zinc-800 text-sm text-zinc-300 border border-zinc-700 rounded-lg px-3 py-1.5 focus:border-blue-500 outline-none"
+                        value={jobFilterArea}
+                        onChange={(e) => setJobFilterArea(e.target.value)}
+                    >
+                        <option value="all">Area: All</option>
+                        {availableAreas.map((area) => (
+                          <option key={area} value={area}>{area}</option>
+                        ))}
+                    </select>
+                    <select
+                        className="bg-zinc-800 text-sm text-zinc-300 border border-zinc-700 rounded-lg px-3 py-1.5 focus:border-blue-500 outline-none"
+                        value={jobFilterContractType}
+                        onChange={(e) => setJobFilterContractType(e.target.value as any)}
+                    >
+                        <option value="all">Contract: All</option>
+                        {availableContractTypes.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                    </select>
+                    <select
+                        className="bg-zinc-800 text-sm text-zinc-300 border border-zinc-700 rounded-lg px-3 py-1.5 focus:border-blue-500 outline-none"
+                        value={jobFilterSeniority}
+                        onChange={(e) => setJobFilterSeniority(e.target.value as any)}
+                    >
+                        <option value="all">Seniority: All</option>
+                        {availableSeniorities.map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                    </select>
+                    <select
+                        className="bg-zinc-800 text-sm text-zinc-300 border border-zinc-700 rounded-lg px-3 py-1.5 focus:border-blue-500 outline-none"
+                        value={jobFilterAvailabilityFit}
+                        onChange={(e) => setJobFilterAvailabilityFit(e.target.value as any)}
+                    >
+                        <option value="all">Availability: All</option>
+                        <option value="quick">Quick Start (Immediate/2 Weeks)</option>
+                    </select>
+                    <select
+                        className="bg-zinc-800 text-sm text-zinc-300 border border-zinc-700 rounded-lg px-3 py-1.5 focus:border-blue-500 outline-none"
+                        value={jobFilterSalaryFit}
+                        onChange={(e) => setJobFilterSalaryFit(e.target.value as any)}
+                    >
+                        <option value="all">Salary: All</option>
+                        <option value="fit">Salary Fit</option>
+                    </select>
+                    <select
+                        className="bg-zinc-800 text-sm text-zinc-300 border border-zinc-700 rounded-lg px-3 py-1.5 focus:border-blue-500 outline-none"
+                        value={jobFilterLanguage}
+                        onChange={(e) => setJobFilterLanguage(e.target.value)}
+                    >
+                        <option value="all">Language: All</option>
+                        {availableLanguages.map((lang) => (
+                          <option key={lang} value={lang}>{lang}</option>
+                        ))}
+                    </select>
+                    <select
+                        className="bg-zinc-800 text-sm text-zinc-300 border border-zinc-700 rounded-lg px-3 py-1.5 focus:border-blue-500 outline-none"
+                        value={jobFilterMustHave}
+                        onChange={(e) => setJobFilterMustHave(e.target.value)}
+                    >
+                        <option value="all">Must-have: All</option>
+                        {availableMustHaves.map((skill) => (
+                          <option key={skill} value={skill}>{skill}</option>
+                        ))}
+                    </select>
+                </div>
+                <div className="grid gap-6 animate-in slide-in-from-bottom-4 fade-in duration-500">
+                    {filteredJobsForApplicant.map(job => {
+                        const applied = hasApplied(job.id);
+                        return (
+                            <div key={job.id} className={`bg-zinc-900 border rounded-xl p-6 transition-all ${applied ? 'border-zinc-800 opacity-75' : 'border-zinc-800 hover:border-zinc-600 shadow-md'}`}>
+                                <div className="flex flex-col md:flex-row justify-between md:items-start gap-4 mb-4">
+                                    <div>
+                                        <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                                            {job.title}
+                                            {applied && <span className="bg-zinc-800 text-zinc-400 text-xs px-2 py-1 rounded border border-zinc-700">Applied</span>}
+                                        </h3>
+                                        <p className="text-sm text-blue-400 font-mono mt-1 mb-2">{job.companyId}</p>
+                                        <p className="text-zinc-400 text-sm leading-relaxed max-w-2xl">{job.description}</p>
+                                        <div className="flex flex-wrap gap-2 mt-2">
+                                            <span className="text-[10px] px-2 py-1 bg-zinc-800 text-zinc-300 rounded-full border border-zinc-700">{job.workType || 'Hybrid'}</span>
+                                            {job.geography && <span className="text-[10px] px-2 py-1 bg-zinc-800 text-zinc-300 rounded-full border border-zinc-700">{job.geography}</span>}
+                                            {job.contractType && <span className="text-[10px] px-2 py-1 bg-zinc-800 text-zinc-300 rounded-full border border-zinc-700">{job.contractType}</span>}
+                                            {job.seniority && <span className="text-[10px] px-2 py-1 bg-zinc-800 text-zinc-300 rounded-full border border-zinc-700">{job.seniority}</span>}
+                                            {(job.salaryMin || job.salaryMax) && <span className="text-[10px] px-2 py-1 bg-zinc-800 text-zinc-300 rounded-full border border-zinc-700">€{job.salaryMin || 0} - €{job.salaryMax || 0}</span>}
+                                            {(job.executionAreas || []).slice(0, 2).map((area, i) => (
+                                                <span key={i} className="text-[10px] px-2 py-1 bg-zinc-800 text-zinc-300 rounded-full border border-zinc-700">{area}</span>
+                                            ))}
+                                        </div>
+                                        
+                                        {/* Skills for Applicant View */}
+                                        <div className="flex flex-wrap gap-2 mt-3">
+                                            {job.skills?.map((skill, i) => (
+                                                <span key={i} className="text-xs px-2 py-1 bg-zinc-800 text-zinc-400 rounded-full border border-zinc-700">
+                                                    {skill}
+                                                </span>
+                                            ))}
+                                        </div>
                                     </div>
+                                    {!applied && (
+                                        <button 
+                                            onClick={() => onStartInterview(job)}
+                                            className="whitespace-nowrap bg-white text-black hover:bg-zinc-200 px-6 py-3 rounded-full font-bold text-sm transition-colors shadow-lg shadow-white/10 flex items-center gap-2"
+                                        >
+                                            <PlayCircleIcon className="w-5 h-5" />
+                                            Start Interview
+                                        </button>
+                                    )}
                                 </div>
-                                {!applied && (
-                                    <button 
-                                        onClick={() => onStartInterview(job)}
-                                        className="whitespace-nowrap bg-white text-black hover:bg-zinc-200 px-6 py-3 rounded-full font-bold text-sm transition-colors shadow-lg shadow-white/10 flex items-center gap-2"
-                                    >
-                                        <PlayCircleIcon className="w-5 h-5" />
-                                        Start Interview
-                                    </button>
-                                )}
+                                <div className="bg-zinc-950/50 rounded p-4 border border-zinc-800/50">
+                                    <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider block mb-1">Requirements</span>
+                                    <p className="text-sm text-zinc-300">{job.requirements}</p>
+                                </div>
                             </div>
-                            <div className="bg-zinc-950/50 rounded p-4 border border-zinc-800/50">
-                                <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider block mb-1">Requirements</span>
-                                <p className="text-sm text-zinc-300">{job.requirements}</p>
-                            </div>
+                        );
+                    })}
+                    {filteredJobsForApplicant.length === 0 && (
+                        <div className="text-center py-20 bg-zinc-900/30 rounded-xl border border-dashed border-zinc-800">
+                            <p className="text-zinc-500">No positions match the selected filters.</p>
                         </div>
-                    );
-                })}
-                {jobs.length === 0 && (
-                    <div className="text-center py-20 bg-zinc-900/30 rounded-xl border border-dashed border-zinc-800">
-                        <p className="text-zinc-500">No open positions available right now.</p>
-                    </div>
-                )}
-            </div>
+                    )}
+                </div>
+            </>
         )}
 
         {/* Applications Tab */}

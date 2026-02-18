@@ -37,6 +37,15 @@ export interface ApplicantProfile {
   country: string;
   phone?: string;
   linkedInUrl?: string;
+  executionAreas?: string[];
+  preferredWorkTypes?: ('Remote' | 'Hybrid' | 'On-site')[];
+  preferredGeographies?: string[];
+  preferredContractTypes?: ('Full-time' | 'Part-time' | 'Contract' | 'Freelance')[];
+  seniority?: 'Junior' | 'Mid' | 'Senior' | 'Lead';
+  salaryExpectationMin?: number;
+  salaryExpectationMax?: number;
+  availability?: 'Immediate' | '2 Weeks' | '1 Month' | '2+ Months';
+  languages?: string[];
 }
 
 export interface Job {
@@ -46,8 +55,31 @@ export interface Job {
   description: string;
   requirements: string;
   skills: string[];
+  executionAreas?: string[];
+  workType?: 'Remote' | 'Hybrid' | 'On-site';
+  geography?: string;
+  contractType?: 'Full-time' | 'Part-time' | 'Contract' | 'Freelance';
+  seniority?: 'Junior' | 'Mid' | 'Senior' | 'Lead';
+  salaryMin?: number;
+  salaryMax?: number;
+  requiredLanguages?: string[];
+  mustHaveSkills?: string[];
+  niceToHaveSkills?: string[];
   interviewStyle: 'Technical' | 'Behavioral' | 'Mixed' | 'Casual';
   createdAt: string;
+}
+
+export interface JobAISettings {
+  id: string;
+  jobId: string;
+  tone: 'Professional' | 'Friendly' | 'Neutral' | 'Energetic' | 'Calm';
+  priorityQuestions: string[];
+  autoFollowUp: boolean;
+  scoringWeights: {
+    transcript: number;
+    video: number;
+  };
+  updatedAt: string;
 }
 
 export interface AIResume {
@@ -63,10 +95,15 @@ export interface Application {
   jobId: string;
   applicantId: string;
   applicantName: string;
+  executionLevel?: 'high' | 'medium' | 'low';
   status: 'pending' | 'completed' | 'reviewed';
   matchScore: number;
   aiResume?: AIResume;
   transcripts?: { question: string; answer: string }[];
+  videoAnalyses?: { question: string; summary: string; confidence: number }[];
+  transcriptMatchScore?: number;
+  videoMatchScore?: number;
+  scoringWeights?: { transcript: number; video: number };
   timestamp: string;
 }
 
@@ -169,6 +206,22 @@ const postJSON = async <T>(path: string, payload: unknown, token?: string): Prom
 const patchJSON = async <T>(path: string, payload: unknown, token?: string): Promise<T> => {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({} as any));
+    throw new Error(body?.message || body?.error || `Request failed (${response.status})`);
+  }
+  return response.json();
+};
+
+const putJSON = async <T>(path: string, payload: unknown, token?: string): Promise<T> => {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -472,6 +525,11 @@ export const Store = {
     return u ? JSON.parse(u) : null;
   },
 
+  getApplicantProfile: (userId: string): ApplicantProfile | undefined => {
+    const applicants = JSON.parse(localStorage.getItem('talent_finder_applicants') || '[]');
+    return applicants.find((a: ApplicantProfile) => a.userId === userId);
+  },
+
   logout: () => {
     localStorage.removeItem('talent_finder_current_user');
     localStorage.removeItem(ADMIN_TOKEN_KEY);
@@ -527,6 +585,44 @@ export const Store = {
       }
   },
 
+  getAdminUserProfile: async (userId: string): Promise<Record<string, any>> => {
+      const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+      if (!token) return {};
+      try {
+          const result = await getJSON<{ profile: Record<string, any> }>(`/api/admin/users/${userId}/profile`, token);
+          return result.profile || {};
+      } catch (error) {
+          console.warn('Failed to load admin user profile.', error);
+          return {};
+      }
+  },
+
+  updateAdminUser: async (
+      userId: string,
+      payload: { name?: string; email?: string; password?: string; status?: 'active' | 'suspended' }
+  ): Promise<{ success: boolean; user?: User; message?: string }> => {
+      const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+      if (!token) return { success: false, message: 'Admin not authenticated.' };
+      try {
+          const result = await patchJSON<{ success: boolean; user: User }>(`/api/admin/users/${userId}`, payload, token);
+          return result;
+      } catch (error: any) {
+          return { success: false, message: error?.message || 'Failed to update user.' };
+      }
+  },
+
+  updateAdminUserProfile: async (userId: string, profile: Record<string, any>): Promise<boolean> => {
+      const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+      if (!token) return false;
+      try {
+          await putJSON(`/api/admin/users/${userId}/profile`, profile, token);
+          return true;
+      } catch (error) {
+          console.warn('Failed to update admin user profile.', error);
+          return false;
+      }
+  },
+
   // Jobs
   getJobs: (): Job[] => {
     const jobs = localStorage.getItem('talent_finder_jobs');
@@ -547,6 +643,56 @@ export const Store = {
 
   getJobById: (id: string): Job | undefined => {
     return Store.getJobs().find(j => j.id === id);
+  },
+
+  getJobAISettings: (jobId: string): JobAISettings => {
+    const allSettings = JSON.parse(localStorage.getItem('talent_finder_job_ai_settings') || '{}');
+    if (allSettings[jobId]) {
+      const stored = allSettings[jobId] as Partial<JobAISettings>;
+      return {
+        id: stored.id || crypto.randomUUID(),
+        jobId,
+        tone: stored.tone || 'Professional',
+        priorityQuestions: stored.priorityQuestions || [],
+        autoFollowUp: stored.autoFollowUp ?? true,
+        scoringWeights: stored.scoringWeights || { transcript: 85, video: 15 },
+        updatedAt: stored.updatedAt || new Date().toISOString(),
+      };
+    }
+
+    return {
+      id: crypto.randomUUID(),
+      jobId,
+      tone: 'Professional',
+      priorityQuestions: [],
+      autoFollowUp: true,
+      scoringWeights: {
+        transcript: 85,
+        video: 15,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+  },
+
+  saveJobAISettings: async (
+    jobId: string,
+    settings: Omit<JobAISettings, 'id' | 'jobId' | 'updatedAt'>
+  ): Promise<JobAISettings> => {
+    await delay(300);
+    const allSettings = JSON.parse(localStorage.getItem('talent_finder_job_ai_settings') || '{}');
+    const current = allSettings[jobId] as JobAISettings | undefined;
+    const nextSettings: JobAISettings = {
+      id: current?.id || crypto.randomUUID(),
+      jobId,
+      tone: settings.tone,
+      priorityQuestions: settings.priorityQuestions || [],
+      autoFollowUp: settings.autoFollowUp,
+      scoringWeights: settings.scoringWeights || { transcript: 85, video: 15 },
+      updatedAt: new Date().toISOString(),
+    };
+    allSettings[jobId] = nextSettings;
+    localStorage.setItem('talent_finder_job_ai_settings', JSON.stringify(allSettings));
+    return nextSettings;
   },
 
   // Applications
@@ -582,6 +728,35 @@ export const Store = {
   getVideo: (applicationId: string, questionIndex: number): Blob | undefined => {
     const appVideos = videoStorage.get(applicationId);
     return appVideos ? appVideos[questionIndex] : undefined;
+  },
+
+  recalculateApplicationScoresForJob: async (
+    jobId: string,
+    weights: { transcript: number; video: number }
+  ): Promise<number> => {
+    await delay(300);
+    const apps = JSON.parse(localStorage.getItem('talent_finder_apps') || '[]') as Application[];
+    let updatedCount = 0;
+
+    const nextApps = apps.map((app) => {
+      if (app.jobId !== jobId) return app;
+
+      const transcriptScore = app.transcriptMatchScore ?? app.matchScore ?? 50;
+      const videoScore = app.videoMatchScore ?? 50;
+      const nextMatchScore = Math.round(
+        (transcriptScore * weights.transcript + videoScore * weights.video) / 100
+      );
+
+      updatedCount += 1;
+      return {
+        ...app,
+        matchScore: nextMatchScore,
+        scoringWeights: weights,
+      };
+    });
+
+    localStorage.setItem('talent_finder_apps', JSON.stringify(nextApps));
+    return updatedCount;
   },
 
   // Admin / System
@@ -635,6 +810,16 @@ export const Store = {
           description: 'We are looking for a React expert to lead our frontend team.',
           requirements: 'React, TypeScript, Tailwind CSS, 5+ years experience',
           skills: ['React', 'TypeScript', 'Node.js'],
+          executionAreas: ['Frontend', 'Web Apps', 'UI Engineering'],
+          workType: 'Hybrid',
+          geography: 'Portugal',
+          contractType: 'Full-time',
+          seniority: 'Senior',
+          salaryMin: 38000,
+          salaryMax: 52000,
+          requiredLanguages: ['Portuguese (C1)', 'English (B2)'],
+          mustHaveSkills: ['React', 'TypeScript'],
+          niceToHaveSkills: ['Design Systems', 'Node.js'],
           interviewStyle: 'Technical',
           createdAt: new Date().toISOString()
         },
@@ -645,6 +830,16 @@ export const Store = {
           description: 'Lead the vision for our new AI product line.',
           requirements: 'Product strategy, Agile, User Research, Communication',
           skills: ['Agile', 'Strategy', 'Communication'],
+          executionAreas: ['Product', 'AI Products'],
+          workType: 'Remote',
+          geography: 'Portugal',
+          contractType: 'Contract',
+          seniority: 'Mid',
+          salaryMin: 30000,
+          salaryMax: 45000,
+          requiredLanguages: ['Portuguese (B2)', 'English (C1)'],
+          mustHaveSkills: ['Agile', 'Stakeholder Management'],
+          niceToHaveSkills: ['Data Analysis', 'LLM Product'],
           interviewStyle: 'Mixed',
           createdAt: new Date().toISOString()
         }
@@ -715,7 +910,16 @@ export const Store = {
             userId: 'demo_applicant',
             fullName: 'Demo Candidate (Live)',
             country: 'USA',
-            linkedInUrl: 'https://linkedin.com/in/democandidate'
+            linkedInUrl: 'https://linkedin.com/in/democandidate',
+            executionAreas: ['Frontend', 'Product'],
+            preferredWorkTypes: ['Remote', 'Hybrid'],
+            preferredGeographies: ['Portugal', 'Spain', 'EU'],
+            preferredContractTypes: ['Full-time', 'Contract'],
+            seniority: 'Mid',
+            salaryExpectationMin: 30000,
+            salaryExpectationMax: 50000,
+            availability: '1 Month',
+            languages: ['English (C1)', 'Portuguese (B1)']
         }]));
 
         // Create a Mock Application for Demo Company to view

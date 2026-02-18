@@ -23,6 +23,10 @@ const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@talentfinder.com';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'ChangeMeNow123!';
 const SHOW_VERIFICATION_CODE = process.env.SHOW_VERIFICATION_CODE === 'true';
 const DISABLE_EMAIL_VERIFICATION = process.env.DISABLE_EMAIL_VERIFICATION !== 'false';
+const TEST_COMPANY_EMAIL = process.env.TEST_COMPANY_EMAIL || 'test.company@talentfinder.com';
+const TEST_COMPANY_PASSWORD = process.env.TEST_COMPANY_PASSWORD || 'TestCompany123!';
+const TEST_APPLICANT_EMAIL = process.env.TEST_APPLICANT_EMAIL || 'test.applicant@talentfinder.com';
+const TEST_APPLICANT_PASSWORD = process.env.TEST_APPLICANT_PASSWORD || 'TestApplicant123!';
 
 const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 const INTERVIEW_MODEL = 'gemini-2.5-flash';
@@ -30,7 +34,7 @@ const ANALYSIS_MODEL = 'gemini-3-pro-preview';
 const adminSessions = new Map();
 
 app.use(cors());
-app.use(express.json({ limit: '20mb' }));
+app.use(express.json({ limit: '50mb' }));
 
 function cleanJSON(text) {
   if (!text) return '{}';
@@ -52,27 +56,102 @@ function ensureDb() {
     fs.mkdirSync(dataDir, { recursive: true });
   }
   if (!fs.existsSync(dataFile)) {
-    const now = new Date().toISOString();
-    const initial = {
-      users: [
-        {
-          id: 'admin_user',
-          name: 'System Admin',
-          role: 'admin',
-          email: ADMIN_EMAIL,
-          passwordHash: hashPassword(ADMIN_PASSWORD),
-          status: 'active',
-          emailVerified: true,
-          onboardingComplete: true,
-          createdAt: now,
-          updatedAt: now,
-        },
-      ],
-      verificationCodes: {},
-      profiles: {},
-    };
+    const initial = { users: [], verificationCodes: {}, profiles: {} };
     fs.writeFileSync(dataFile, JSON.stringify(initial, null, 2));
   }
+
+  const now = new Date().toISOString();
+  const db = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+
+  const upsertUser = ({
+    id,
+    name,
+    role,
+    email,
+    password,
+    onboardingComplete = true,
+  }) => {
+    const normalizedEmail = String(email).toLowerCase();
+    const existingIdx = db.users.findIndex((u) => u.email === normalizedEmail);
+    const payload = {
+      id,
+      name,
+      role,
+      email: normalizedEmail,
+      passwordHash: hashPassword(password),
+      status: 'active',
+      emailVerified: true,
+      onboardingComplete,
+      updatedAt: now,
+    };
+
+    if (existingIdx === -1) {
+      db.users.push({ ...payload, createdAt: now });
+      return id;
+    }
+
+    db.users[existingIdx] = {
+      ...db.users[existingIdx],
+      ...payload,
+      createdAt: db.users[existingIdx].createdAt || now,
+    };
+    return db.users[existingIdx].id;
+  };
+
+  const adminId = upsertUser({
+    id: 'admin_user',
+    name: 'System Admin',
+    role: 'admin',
+    email: ADMIN_EMAIL,
+    password: ADMIN_PASSWORD,
+    onboardingComplete: true,
+  });
+
+  const companyId = upsertUser({
+    id: 'test_company_user',
+    name: 'Test Company',
+    role: 'company',
+    email: TEST_COMPANY_EMAIL,
+    password: TEST_COMPANY_PASSWORD,
+    onboardingComplete: true,
+  });
+
+  const applicantId = upsertUser({
+    id: 'test_applicant_user',
+    name: 'Test Applicant',
+    role: 'applicant',
+    email: TEST_APPLICANT_EMAIL,
+    password: TEST_APPLICANT_PASSWORD,
+    onboardingComplete: true,
+  });
+
+  db.profiles = db.profiles || {};
+  db.profiles[companyId] = db.profiles[companyId] || {
+    role: 'company',
+    companyName: 'Test Company',
+    website: 'https://example.com',
+    size: '11-50',
+    industry: 'Technology',
+    country: 'Portugal',
+    contactPerson: 'Test Manager',
+    contactPhone: '+351900000000',
+    updatedAt: now,
+  };
+
+  db.profiles[applicantId] = db.profiles[applicantId] || {
+    role: 'applicant',
+    fullName: 'Test Applicant',
+    country: 'Portugal',
+    phone: '+351900000001',
+    linkedInUrl: 'https://linkedin.com/in/test-applicant',
+    updatedAt: now,
+  };
+
+  if (!db.users.find((u) => u.id === adminId)) {
+    throw new Error('Failed to ensure admin account.');
+  }
+
+  fs.writeFileSync(dataFile, JSON.stringify(db, null, 2));
 }
 
 function readDb() {
@@ -280,6 +359,85 @@ app.patch('/api/admin/users/:id/status', requireAdmin, (req, res) => {
   }
 });
 
+app.get('/api/admin/users/:id/profile', requireAdmin, (req, res) => {
+  try {
+    const { id } = req.params;
+    const db = readDb();
+    const user = db.users.find((u) => u.id === id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+    return res.json({ profile: db.profiles[id] || {} });
+  } catch (error) {
+    console.error('admin profile read error', error);
+    return res.status(500).json({ error: 'Failed to load user profile.' });
+  }
+});
+
+app.patch('/api/admin/users/:id', requireAdmin, (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, email, password, status } = req.body || {};
+    const db = readDb();
+    const idx = db.users.findIndex((u) => u.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    if (typeof name === 'string' && name.trim().length > 0) {
+      db.users[idx].name = name.trim();
+    }
+
+    if (typeof email === 'string' && email.trim().length > 0) {
+      const normalizedEmail = email.trim().toLowerCase();
+      const emailInUse = db.users.some((u, i) => i !== idx && u.email === normalizedEmail);
+      if (emailInUse) {
+        return res.status(409).json({ error: 'Email already in use.' });
+      }
+      db.users[idx].email = normalizedEmail;
+    }
+
+    if (typeof password === 'string' && password.length >= 8) {
+      db.users[idx].passwordHash = hashPassword(password);
+    }
+
+    if (status === 'active' || status === 'suspended') {
+      db.users[idx].status = status;
+    }
+
+    db.users[idx].updatedAt = new Date().toISOString();
+    writeDb(db);
+
+    return res.json({ success: true, user: publicUser(db.users[idx]) });
+  } catch (error) {
+    console.error('admin user update error', error);
+    return res.status(500).json({ error: 'Failed to update user.' });
+  }
+});
+
+app.put('/api/admin/users/:id/profile', requireAdmin, (req, res) => {
+  try {
+    const { id } = req.params;
+    const profile = req.body || {};
+    const db = readDb();
+    const idx = db.users.findIndex((u) => u.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    db.profiles[id] = {
+      ...profile,
+      updatedAt: new Date().toISOString(),
+    };
+    writeDb(db);
+
+    return res.json({ success: true, profile: db.profiles[id] });
+  } catch (error) {
+    console.error('admin profile update error', error);
+    return res.status(500).json({ error: 'Failed to update user profile.' });
+  }
+});
+
 app.post('/api/ai/generate-questions', async (req, res) => {
   try {
     if (!ai) {
@@ -311,7 +469,7 @@ app.post('/api/ai/generate-questions', async (req, res) => {
   }
 });
 
-app.post('/api/ai/transcribe-analyze', async (req, res) => {
+app.post('/api/ai/transcribe', async (req, res) => {
   try {
     if (!ai) {
       return res.status(503).json({ error: 'AI service is not configured.' });
@@ -327,7 +485,7 @@ app.post('/api/ai/transcribe-analyze', async (req, res) => {
       contents: {
         parts: [
           {
-            text: `Transcribe the audio/video answer to the question: "${question}". Then, rate the quality of the answer on a scale of 1-100 based on relevance, clarity, and depth. Return JSON: { "transcript": string, "score": number }.`
+            text: `Transcribe the answer to this interview question: "${question}". Return JSON: { "transcript": string }.`
           },
           { inlineData: { mimeType: mimeType || 'video/webm', data: base64Audio } },
         ],
@@ -338,7 +496,6 @@ app.post('/api/ai/transcribe-analyze', async (req, res) => {
           type: Type.OBJECT,
           properties: {
             transcript: { type: Type.STRING },
-            score: { type: Type.INTEGER },
           },
         },
       },
@@ -347,11 +504,89 @@ app.post('/api/ai/transcribe-analyze', async (req, res) => {
     const parsed = JSON.parse(cleanJSON(response.text || '{}'));
     res.json({
       transcript: parsed.transcript || 'Audio could not be processed.',
+    });
+  } catch (error) {
+    console.error('transcribe error', error);
+    res.status(500).json({ error: 'Failed to transcribe.' });
+  }
+});
+
+app.post('/api/ai/evaluate-transcript', async (req, res) => {
+  try {
+    if (!ai) {
+      return res.status(503).json({ error: 'AI service is not configured.' });
+    }
+
+    const { question, transcript } = req.body || {};
+    if (!question || !transcript) {
+      return res.status(400).json({ error: 'Missing question or transcript.' });
+    }
+
+    const response = await ai.models.generateContent({
+      model: INTERVIEW_MODEL,
+      contents: `Evaluate this interview answer transcript.\nQuestion: "${question}"\nTranscript: "${transcript}"\n\nScore the quality from 1-100 based on relevance, clarity, depth, and evidence in the text. Return JSON: { "score": number }.`,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            score: { type: Type.INTEGER },
+          },
+        },
+      },
+    });
+
+    const parsed = JSON.parse(cleanJSON(response.text || '{}'));
+    res.json({
       quality: parsed.score || 50,
     });
   } catch (error) {
-    console.error('transcribe-analyze error', error);
-    res.status(500).json({ error: 'Failed to transcribe/analyze.' });
+    console.error('evaluate-transcript error', error);
+    res.status(500).json({ error: 'Failed to evaluate transcript.' });
+  }
+});
+
+app.post('/api/ai/analyze-video', async (req, res) => {
+  try {
+    if (!ai) {
+      return res.status(503).json({ error: 'AI service is not configured.' });
+    }
+
+    const { question, mimeType, base64Audio } = req.body || {};
+    if (!question || !base64Audio) {
+      return res.status(400).json({ error: 'Missing question or video.' });
+    }
+
+    const response = await ai.models.generateContent({
+      model: INTERVIEW_MODEL,
+      contents: {
+        parts: [
+          {
+            text: `Analyze the non-verbal communication in this interview video answer to "${question}". Focus on delivery, confidence, pace, and clarity cues. Return JSON: { "summary": string, "confidence": number } where confidence is 1-100.`
+          },
+          { inlineData: { mimeType: mimeType || 'video/webm', data: base64Audio } },
+        ],
+      },
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            summary: { type: Type.STRING },
+            confidence: { type: Type.INTEGER },
+          },
+        },
+      },
+    });
+
+    const parsed = JSON.parse(cleanJSON(response.text || '{}'));
+    res.json({
+      summary: parsed.summary || 'Video analysis unavailable.',
+      confidence: parsed.confidence || 50,
+    });
+  } catch (error) {
+    console.error('analyze-video error', error);
+    res.status(500).json({ error: 'Failed to analyze video.' });
   }
 });
 

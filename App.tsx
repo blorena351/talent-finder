@@ -13,8 +13,11 @@ import { HowItWorks } from './components/HowItWorks';
 import { Pricing } from './components/Pricing';
 import { Store, User, Job } from './services/store';
 import { generateCandidateProfile } from './services/gemini';
+import { useI18n } from './services/i18n';
+import { LanguageSwitcher } from './components/LanguageSwitcher';
 
 const App: React.FC = () => {
+  const { t } = useI18n();
   const [user, setUser] = useState<User | null>(null);
   const [view, setView] = useState<'landing' | 'auth' | 'dashboard' | 'interview' | 'features' | 'how-it-works' | 'pricing'>('landing');
   const [authRole, setAuthRole] = useState<'company' | 'applicant' | 'admin'>('applicant');
@@ -47,8 +50,15 @@ const App: React.FC = () => {
     setView('interview');
   };
 
-  const handleInterviewComplete = async (transcripts: {question: string, answer: string, score: number}[], videos: Record<number, Blob>) => {
+  const handleInterviewComplete = async (
+    transcripts: {question: string, answer: string, score: number}[],
+    videoAnalyses: { question: string; summary: string; confidence: number }[],
+    videos: Record<number, Blob>
+  ) => {
     if (!user || !interviewJob) return;
+    const jobAISettings = Store.getJobAISettings(interviewJob.id);
+    const transcriptWeight = jobAISettings.scoringWeights?.transcript ?? 85;
+    const videoWeight = jobAISettings.scoringWeights?.video ?? 15;
 
     if (user.isDemo) {
         // In Demo mode, we simulate the success but don't persist data
@@ -65,15 +75,29 @@ const App: React.FC = () => {
 
     // Generate Profile
     const profile = await generateCandidateProfile(interviewJob.title, interviewJob.requirements, transcripts);
+    const transcriptMatchScore = profile.finalMatchScore;
+    const videoMatchScore = videoAnalyses.length
+      ? Math.round(videoAnalyses.reduce((acc, item) => acc + item.confidence, 0) / videoAnalyses.length)
+      : 50;
+    const finalWeightedScore = Math.round(
+      (transcriptMatchScore * transcriptWeight + videoMatchScore * videoWeight) / 100
+    );
+    const executionLevel: 'high' | 'medium' | 'low' =
+      finalWeightedScore >= 80 ? 'high' : finalWeightedScore >= 60 ? 'medium' : 'low';
 
     // Save Application
     await Store.createApplication({
         jobId: interviewJob.id,
         applicantId: user.id,
         applicantName: user.name,
-        matchScore: profile.finalMatchScore,
+        executionLevel,
+        matchScore: finalWeightedScore,
+        transcriptMatchScore,
+        videoMatchScore,
+        scoringWeights: { transcript: transcriptWeight, video: videoWeight },
         aiResume: profile,
         transcripts: transcripts.map(t => ({ question: t.question, answer: t.answer })),
+        videoAnalyses,
     }, videos);
 
     alert("Interview submitted successfully! The company will review your AI profile.");
@@ -177,23 +201,24 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <div className="min-h-screen text-zinc-100">
       {/* Header */}
-      <header className="border-b border-zinc-800 bg-zinc-950/80 backdrop-blur sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <header className="sticky top-0 z-30 border-b border-slate-700/40 bg-slate-950/85 backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 min-h-16 py-2 flex flex-wrap gap-y-2 items-center justify-between">
             <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-white">T</div>
+                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-white shadow-md shadow-blue-500/30">T</div>
                 <span className="font-bold text-lg tracking-tight">Talent Finder</span>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 sm:gap-4 ml-auto">
                 <div className="text-sm text-zinc-400 hidden sm:block">
-                    Logged in as <span className="text-white font-medium">{user.name}</span> ({user.role})
+                    {t('app_logged_as', 'Logged in as')} <span className="text-white font-medium">{user.name}</span> ({user.role})
                 </div>
+                <LanguageSwitcher />
                 <button 
                     onClick={handleLogout}
-                    className="text-xs font-medium border border-zinc-700 hover:bg-zinc-800 px-3 py-1.5 rounded transition-colors"
+                    className="text-xs font-medium border border-slate-600 hover:bg-slate-800/80 px-3 py-1.5 rounded-full transition-colors"
                 >
-                    Sign Out
+                    {t('app_sign_out', 'Sign Out')}
                 </button>
             </div>
         </div>

@@ -14,6 +14,14 @@ services:
         value: admin@talentfinder.com
       - key: ADMIN_PASSWORD
         sync: false
+      - key: TEST_COMPANY_EMAIL
+        value: test.company@talentfinder.com
+      - key: TEST_COMPANY_PASSWORD
+        sync: false
+      - key: TEST_APPLICANT_EMAIL
+        value: test.applicant@talentfinder.com
+      - key: TEST_APPLICANT_PASSWORD
+        sync: false
       - key: SHOW_VERIFICATION_CODE
         value: false
       - key: DISABLE_EMAIL_VERIFICATION

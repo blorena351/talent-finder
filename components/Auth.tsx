@@ -14,6 +14,8 @@ import {
   SparklesIcon,
   PlayCircleIcon,
 } from '@heroicons/react/24/outline';
+import { useI18n } from '../services/i18n';
+import { LanguageSwitcher } from './LanguageSwitcher';
 
 interface AuthProps {
   onLogin: (user: User) => void;
@@ -24,6 +26,7 @@ interface AuthProps {
 type AuthStep = 'SELECT_ROLE' | 'SIGNUP_FORM' | 'ONBOARDING' | 'LOGIN_FORM';
 
 export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
+  const { t } = useI18n();
   const demoEnabled = import.meta.env.VITE_ENABLE_DEMO === 'true';
   const [step, setStep] = useState<AuthStep>(initialRole ? 'LOGIN_FORM' : 'SELECT_ROLE');
   const [role, setRole] = useState<'company' | 'applicant' | 'admin'>('applicant');
@@ -50,6 +53,15 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
     country: '',
     phone: '',
     linkedInUrl: '',
+    executionAreasText: '',
+    preferredWorkTypes: [] as ('Remote' | 'Hybrid' | 'On-site')[],
+    preferredGeographiesText: '',
+    preferredContractTypes: [] as ('Full-time' | 'Part-time' | 'Contract' | 'Freelance')[],
+    seniority: 'Mid' as 'Junior' | 'Mid' | 'Senior' | 'Lead',
+    salaryExpectationMin: '',
+    salaryExpectationMax: '',
+    availability: '1 Month' as 'Immediate' | '2 Weeks' | '1 Month' | '2+ Months',
+    languagesText: '',
   });
 
   const validateEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -143,7 +155,21 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
         setIsLoading(false);
         return;
       }
-      await Store.saveApplicantProfile(currentUser.id, applicantForm);
+      await Store.saveApplicantProfile(currentUser.id, {
+        fullName: applicantForm.fullName,
+        country: applicantForm.country,
+        phone: applicantForm.phone,
+        linkedInUrl: applicantForm.linkedInUrl,
+        executionAreas: applicantForm.executionAreasText.split(',').map(v => v.trim()).filter(Boolean),
+        preferredWorkTypes: applicantForm.preferredWorkTypes,
+        preferredGeographies: applicantForm.preferredGeographiesText.split(',').map(v => v.trim()).filter(Boolean),
+        preferredContractTypes: applicantForm.preferredContractTypes,
+        seniority: applicantForm.seniority,
+        salaryExpectationMin: applicantForm.salaryExpectationMin ? parseInt(applicantForm.salaryExpectationMin) : undefined,
+        salaryExpectationMax: applicantForm.salaryExpectationMax ? parseInt(applicantForm.salaryExpectationMax) : undefined,
+        availability: applicantForm.availability,
+        languages: applicantForm.languagesText.split(',').map(v => v.trim()).filter(Boolean),
+      });
     }
 
     setIsLoading(false);
@@ -154,8 +180,8 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
   const renderRoleSelection = () => (
     <div className="animate-in fade-in zoom-in duration-300 w-full max-w-2xl">
       <div className="text-center mb-10">
-        <h1 className="text-4xl font-bold text-white mb-4">Create your account</h1>
-        <p className="text-zinc-400">Join Talent Finder today. Choose your path to get started.</p>
+        <h1 className="text-4xl font-bold text-white mb-4">{t('auth_create_account', 'Create your account')}</h1>
+        <p className="text-zinc-400">{t('auth_join', 'Join Talent Finder today. Choose your path to get started.')}</p>
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
@@ -166,7 +192,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
           <div className="w-14 h-14 bg-blue-900/20 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
             <UserIcon className="w-8 h-8 text-blue-500" />
           </div>
-          <h3 className="text-xl font-bold text-white mb-2">I'm an Applicant</h3>
+          <h3 className="text-xl font-bold text-white mb-2">{t('auth_applicant', "I'm an Applicant")}</h3>
           <p className="text-zinc-400 text-sm leading-relaxed">Find your next role and complete AI-assisted interviews.</p>
           <div className="absolute bottom-6 right-6 opacity-0 group-hover:opacity-100 transition-opacity">
             <ArrowLeftIcon className="w-5 h-5 text-blue-500 rotate-180" />
@@ -180,7 +206,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
           <div className="w-14 h-14 bg-purple-900/20 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
             <BuildingOfficeIcon className="w-8 h-8 text-purple-500" />
           </div>
-          <h3 className="text-xl font-bold text-white mb-2">I'm a Company</h3>
+          <h3 className="text-xl font-bold text-white mb-2">{t('auth_company', "I'm a Company")}</h3>
           <p className="text-zinc-400 text-sm leading-relaxed">Create jobs, run interviews, and shortlist faster.</p>
           <div className="absolute bottom-6 right-6 opacity-0 group-hover:opacity-100 transition-opacity">
             <ArrowLeftIcon className="w-5 h-5 text-purple-500 rotate-180" />
@@ -190,9 +216,9 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
 
       <div className="text-center mt-12">
         <p className="text-zinc-500">
-          Already have an account?{' '}
+          {t('auth_already', 'Already have an account?')}{' '}
           <button onClick={() => setStep('LOGIN_FORM')} className="text-white font-medium hover:underline underline-offset-4">
-            Log in here
+            {t('auth_login_here', 'Log in here')}
           </button>
         </p>
       </div>
@@ -202,8 +228,8 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
   const renderSignup = () => (
     <div className="w-full max-w-md animate-in slide-in-from-right-8 duration-300">
       <div className="mb-8">
-        <h2 className="text-2xl font-bold text-white mb-2">Sign up as {role === 'company' ? 'Company' : 'Applicant'}</h2>
-        <p className="text-zinc-400 text-sm">Create your credentials to continue.</p>
+        <h2 className="text-2xl font-bold text-white mb-2">{t('auth_signup_as', 'Sign up as')} {role === 'company' ? t('auth_company', "I'm a Company").replace("I'm ", '') : t('auth_applicant', "I'm an Applicant").replace("I'm an ", '')}</h2>
+        <p className="text-zinc-400 text-sm">{t('auth_credentials', 'Create your credentials to continue.')}</p>
       </div>
 
       <form onSubmit={handleSignup} className="space-y-4">
@@ -215,7 +241,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
         )}
 
         <div className="space-y-1">
-          <label className="text-xs font-medium text-zinc-400 uppercase">Email</label>
+          <label className="text-xs font-medium text-zinc-400 uppercase">{t('auth_email', 'Email')}</label>
           <div className="relative">
             <input
               type="email"
@@ -230,7 +256,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
         </div>
 
         <div className="space-y-1">
-          <label className="text-xs font-medium text-zinc-400 uppercase">Password</label>
+          <label className="text-xs font-medium text-zinc-400 uppercase">{t('auth_password', 'Password')}</label>
           <div className="relative">
             <input
               type="password"
@@ -245,7 +271,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
         </div>
 
         <div className="space-y-1">
-          <label className="text-xs font-medium text-zinc-400 uppercase">Confirm Password</label>
+          <label className="text-xs font-medium text-zinc-400 uppercase">{t('auth_confirm_password', 'Confirm Password')}</label>
           <div className="relative">
             <input
               type="password"
@@ -260,7 +286,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
         </div>
 
         <button type="submit" disabled={isLoading} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-colors mt-4 disabled:opacity-50">
-          {isLoading ? 'Creating Account...' : 'Create Account'}
+          {isLoading ? '...' : t('auth_create_btn', 'Create Account')}
         </button>
       </form>
     </div>
@@ -395,6 +421,115 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
                 placeholder="https://linkedin.com/in/..."
               />
             </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-zinc-400 uppercase mb-1">Execution Areas</label>
+              <input
+                type="text"
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
+                value={applicantForm.executionAreasText}
+                onChange={(e) => setApplicantForm({ ...applicantForm, executionAreasText: e.target.value })}
+                placeholder="Frontend, Product, Data..."
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 uppercase mb-1">Preferred Work Types</label>
+              <select
+                multiple
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:border-blue-500 outline-none h-28"
+                value={applicantForm.preferredWorkTypes}
+                onChange={(e) => {
+                  const selected = Array.from(e.target.selectedOptions).map(o => o.value as 'Remote' | 'Hybrid' | 'On-site');
+                  setApplicantForm({ ...applicantForm, preferredWorkTypes: selected });
+                }}
+              >
+                <option value="Remote">Remote</option>
+                <option value="Hybrid">Hybrid</option>
+                <option value="On-site">On-site</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 uppercase mb-1">Preferred Contract Types</label>
+              <select
+                multiple
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:border-blue-500 outline-none h-28"
+                value={applicantForm.preferredContractTypes}
+                onChange={(e) => {
+                  const selected = Array.from(e.target.selectedOptions).map(o => o.value as 'Full-time' | 'Part-time' | 'Contract' | 'Freelance');
+                  setApplicantForm({ ...applicantForm, preferredContractTypes: selected });
+                }}
+              >
+                <option value="Full-time">Full-time</option>
+                <option value="Part-time">Part-time</option>
+                <option value="Contract">Contract</option>
+                <option value="Freelance">Freelance</option>
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-zinc-400 uppercase mb-1">Preferred Geographies</label>
+              <input
+                type="text"
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
+                value={applicantForm.preferredGeographiesText}
+                onChange={(e) => setApplicantForm({ ...applicantForm, preferredGeographiesText: e.target.value })}
+                placeholder="Portugal, Spain, EU..."
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 uppercase mb-1">Seniority</label>
+              <select
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
+                value={applicantForm.seniority}
+                onChange={(e) => setApplicantForm({ ...applicantForm, seniority: e.target.value as any })}
+              >
+                <option value="Junior">Junior</option>
+                <option value="Mid">Mid</option>
+                <option value="Senior">Senior</option>
+                <option value="Lead">Lead</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 uppercase mb-1">Availability</label>
+              <select
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
+                value={applicantForm.availability}
+                onChange={(e) => setApplicantForm({ ...applicantForm, availability: e.target.value as any })}
+              >
+                <option value="Immediate">Immediate</option>
+                <option value="2 Weeks">2 Weeks</option>
+                <option value="1 Month">1 Month</option>
+                <option value="2+ Months">2+ Months</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 uppercase mb-1">Salary Min (year)</label>
+              <input
+                type="number"
+                min="0"
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
+                value={applicantForm.salaryExpectationMin}
+                onChange={(e) => setApplicantForm({ ...applicantForm, salaryExpectationMin: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 uppercase mb-1">Salary Max (year)</label>
+              <input
+                type="number"
+                min="0"
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
+                value={applicantForm.salaryExpectationMax}
+                onChange={(e) => setApplicantForm({ ...applicantForm, salaryExpectationMax: e.target.value })}
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-zinc-400 uppercase mb-1">Languages</label>
+              <input
+                type="text"
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
+                value={applicantForm.languagesText}
+                onChange={(e) => setApplicantForm({ ...applicantForm, languagesText: e.target.value })}
+                placeholder="English (C1), Portuguese (B2)..."
+              />
+            </div>
           </div>
         )}
 
@@ -408,8 +543,8 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
   const renderLogin = () => (
     <div className="w-full max-w-md animate-in slide-in-from-left-8 duration-300">
       <div className="mb-8">
-        <h2 className="text-2xl font-bold text-white mb-2">Welcome Back</h2>
-        <p className="text-zinc-400 text-sm">Log in to access your dashboard.</p>
+        <h2 className="text-2xl font-bold text-white mb-2">{t('auth_welcome_back', 'Welcome Back')}</h2>
+        <p className="text-zinc-400 text-sm">{t('auth_login_access', 'Log in to access your dashboard.')}</p>
       </div>
 
       <form onSubmit={handleLoginSubmit} className="space-y-4">
@@ -420,7 +555,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
           </div>
         )}
         <div className="space-y-1">
-          <label className="text-xs font-medium text-zinc-400 uppercase">Email</label>
+          <label className="text-xs font-medium text-zinc-400 uppercase">{t('auth_email', 'Email')}</label>
           <div className="relative">
             <input
               type="email"
@@ -433,7 +568,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
           </div>
         </div>
         <div className="space-y-1">
-          <label className="text-xs font-medium text-zinc-400 uppercase">Password</label>
+          <label className="text-xs font-medium text-zinc-400 uppercase">{t('auth_password', 'Password')}</label>
           <div className="relative">
             <input
               type="password"
@@ -510,21 +645,24 @@ export const Auth: React.FC<AuthProps> = ({ onLogin, initialRole, onBack }) => {
   );
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-zinc-950">
+    <div className="ui-shell min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
       <div className="absolute inset-0 z-0 pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-600/5 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl" />
       </div>
 
       <div className="relative z-10 w-full flex flex-col items-center">
+        <div className="absolute top-0 right-0 sm:right-6 md:right-10">
+          <LanguageSwitcher />
+        </div>
         {step !== 'SELECT_ROLE' && step !== 'LOGIN_FORM' && (
-          <button onClick={onBack} className="absolute top-0 left-0 md:left-10 text-zinc-500 hover:text-white flex items-center gap-2 text-sm">
+          <button onClick={onBack} className="absolute top-0 left-0 sm:left-6 md:left-10 text-zinc-500 hover:text-white flex items-center gap-2 text-sm">
             <ArrowLeftIcon className="w-4 h-4" /> Back
           </button>
         )}
 
         {step === 'LOGIN_FORM' && (
-          <button onClick={onBack} className="absolute top-0 left-0 md:left-10 text-zinc-500 hover:text-white flex items-center gap-2 text-sm">
+          <button onClick={onBack} className="absolute top-0 left-0 sm:left-6 md:left-10 text-zinc-500 hover:text-white flex items-center gap-2 text-sm">
             <ArrowLeftIcon className="w-4 h-4" /> Home
           </button>
         )}

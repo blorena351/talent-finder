@@ -22,6 +22,11 @@ async function postJSON<T>(path: string, payload: unknown): Promise<T> {
   return response.json();
 }
 
+function normalizeMimeType(mimeType: string): string {
+  if (!mimeType) return 'video/webm';
+  return mimeType.split(';')[0].trim() || 'video/webm';
+}
+
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -38,12 +43,26 @@ function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-export async function generateQuestions(jobTitle: string, requirements: string): Promise<string[]> {
+interface QuestionGenerationOptions {
+  tone?: 'Professional' | 'Friendly' | 'Neutral' | 'Energetic' | 'Calm';
+  priorityQuestions?: string[];
+}
+
+export async function generateQuestions(
+  jobTitle: string,
+  requirements: string,
+  options?: QuestionGenerationOptions
+): Promise<string[]> {
   try {
     const prompts = Store.getPrompts();
-    const prompt = prompts.questionGeneration
+    const basePrompt = prompts.questionGeneration
       .replace('{{jobTitle}}', jobTitle)
       .replace('{{requirements}}', requirements);
+    const toneInstruction = options?.tone ? `\nInterview tone for this job: ${options.tone}.` : '';
+    const priorityInstruction = options?.priorityQuestions?.length
+      ? `\nUse these priority questions first (adapt wording only if needed):\n${options.priorityQuestions.map((q, idx) => `${idx + 1}. ${q}`).join('\n')}`
+      : '';
+    const prompt = `${basePrompt}${toneInstruction}${priorityInstruction}`;
 
     const data = await postJSON<{ questions: string[] }>('/api/ai/generate-questions', { prompt });
     if (Array.isArray(data.questions) && data.questions.length > 0) {
@@ -61,22 +80,55 @@ export async function generateQuestions(jobTitle: string, requirements: string):
   }
 }
 
-export async function transcribeAndAnalyze(audioBlob: Blob, question: string): Promise<{ transcript: string; quality: number }> {
+export async function transcribeAnswer(audioBlob: Blob, question: string): Promise<{ transcript: string }> {
   try {
     const base64Audio = await blobToBase64(audioBlob);
-    const data = await postJSON<{ transcript: string; quality: number }>('/api/ai/transcribe-analyze', {
+    const data = await postJSON<{ transcript: string }>('/api/ai/transcribe', {
       question,
-      mimeType: audioBlob.type || 'video/webm',
+      mimeType: normalizeMimeType(audioBlob.type),
       base64Audio,
     });
 
     return {
       transcript: data.transcript || 'Audio could not be processed.',
-      quality: data.quality || 50,
     };
   } catch (e) {
-    console.error('Analysis failed', e);
-    return { transcript: '(Analysis unavailable due to error)', quality: 50 };
+    console.error('Transcription failed', e);
+    return { transcript: '(Transcript unavailable due to error)' };
+  }
+}
+
+export async function evaluateTranscript(question: string, transcript: string): Promise<{ quality: number }> {
+  if (!transcript || transcript.includes('unavailable')) {
+    return { quality: 50 };
+  }
+  try {
+    const data = await postJSON<{ quality: number }>('/api/ai/evaluate-transcript', {
+      question,
+      transcript,
+    });
+    return { quality: data.quality || 50 };
+  } catch (e) {
+    console.error('Transcript evaluation failed', e);
+    return { quality: 50 };
+  }
+}
+
+export async function analyzeVideoAnswer(audioBlob: Blob, question: string): Promise<{ summary: string; confidence: number }> {
+  try {
+    const base64Audio = await blobToBase64(audioBlob);
+    const data = await postJSON<{ summary: string; confidence: number }>('/api/ai/analyze-video', {
+      question,
+      mimeType: normalizeMimeType(audioBlob.type),
+      base64Audio,
+    });
+    return {
+      summary: data.summary || 'Video analysis unavailable.',
+      confidence: data.confidence || 50,
+    };
+  } catch (e) {
+    console.error('Video analysis failed', e);
+    return { summary: 'Video analysis unavailable due to error.', confidence: 50 };
   }
 }
 

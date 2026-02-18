@@ -3,14 +3,18 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useState, useRef, useEffect } from 'react';
-import { Job } from '../services/store';
-import { generateQuestions, transcribeAndAnalyze } from '../services/gemini';
+import { Job, Store } from '../services/store';
+import { analyzeVideoAnswer, evaluateTranscript, generateQuestions, transcribeAnswer } from '../services/gemini';
 import { StopIcon, PlayIcon, CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/solid';
 
 interface InterviewProps {
   job: Job;
   applicantName: string;
-  onComplete: (transcripts: {question: string, answer: string, score: number}[], videos: Record<number, Blob>) => void;
+  onComplete: (
+    transcripts: {question: string, answer: string, score: number}[],
+    videoAnalyses: { question: string; summary: string; confidence: number }[],
+    videos: Record<number, Blob>
+  ) => void;
   onCancel: () => void;
 }
 
@@ -21,6 +25,7 @@ export const Interview: React.FC<InterviewProps> = ({ job, applicantName, onComp
   const [isRecording, setIsRecording] = useState(false);
   const [timeLeft, setTimeLeft] = useState(60); // 60s per answer
   const [results, setResults] = useState<{question: string, answer: string, score: number}[]>([]);
+  const [videoAnalysisResults, setVideoAnalysisResults] = useState<{ question: string; summary: string; confidence: number }[]>([]);
   const [videoBlobs, setVideoBlobs] = useState<Record<number, Blob>>({});
   const [isSimulationMode, setIsSimulationMode] = useState(false);
   
@@ -66,7 +71,11 @@ export const Interview: React.FC<InterviewProps> = ({ job, applicantName, onComp
              "What is your experience with the required technologies?"
          ]);
     } else {
-        const qs = await generateQuestions(job.title, job.requirements);
+        const jobAISettings = Store.getJobAISettings(job.id);
+        const qs = await generateQuestions(job.title, job.requirements, {
+          tone: jobAISettings.tone,
+          priorityQuestions: jobAISettings.priorityQuestions,
+        });
         setQuestions(qs);
     }
     setStep('question');
@@ -87,7 +96,11 @@ export const Interview: React.FC<InterviewProps> = ({ job, applicantName, onComp
       : 'video/webm';
       
     try {
-        const recorder = new MediaRecorder(streamRef.current, { mimeType });
+        const recorder = new MediaRecorder(streamRef.current, {
+          mimeType,
+          videoBitsPerSecond: 450_000,
+          audioBitsPerSecond: 64_000,
+        });
         
         recorder.ondataavailable = (e) => {
           if (e.data.size > 0) chunksRef.current.push(e.data);
@@ -100,17 +113,25 @@ export const Interview: React.FC<InterviewProps> = ({ job, applicantName, onComp
           // Save blob for this question
           setVideoBlobs(prev => ({ ...prev, [currentQuestionIndex]: blob }));
     
-          // Analyze
+          // Transcript is the source for scoring/profile analytics.
           const currentQ = questions[currentQuestionIndex];
-          const analysis = await transcribeAndAnalyze(blob, currentQ);
+          const transcriptResult = await transcribeAnswer(blob, currentQ);
+          const transcriptEvaluation = await evaluateTranscript(currentQ, transcriptResult.transcript);
+          const videoAnalysis = await analyzeVideoAnswer(blob, currentQ);
           
           const newResult = {
             question: currentQ,
-            answer: analysis.transcript,
-            score: analysis.quality
+            answer: transcriptResult.transcript,
+            score: transcriptEvaluation.quality
+          };
+          const newVideoAnalysis = {
+            question: currentQ,
+            summary: videoAnalysis.summary,
+            confidence: videoAnalysis.confidence,
           };
           
           setResults(prev => [...prev, newResult]);
+          setVideoAnalysisResults(prev => [...prev, newVideoAnalysis]);
           
           // Next step
           if (currentQuestionIndex < questions.length - 1) {
@@ -119,7 +140,11 @@ export const Interview: React.FC<InterviewProps> = ({ job, applicantName, onComp
             setStep('question');
           } else {
             setStep('finished');
-            onComplete([...results, newResult], { ...videoBlobs, [currentQuestionIndex]: blob });
+            onComplete(
+              [...results, newResult],
+              [...videoAnalysisResults, newVideoAnalysis],
+              { ...videoBlobs, [currentQuestionIndex]: blob }
+            );
           }
         };
     
@@ -147,8 +172,14 @@ export const Interview: React.FC<InterviewProps> = ({ job, applicantName, onComp
             answer: "This is a simulated response generated because camera access was unavailable. In a real interview, the candidate's spoken response would be transcribed here.",
             score: Math.floor(Math.random() * 20) + 70 // Random score between 70-90
         };
+        const mockVideoAnalysis = {
+            question: currentQ,
+            summary: "Simulation mode: video behavior analysis not available without camera capture.",
+            confidence: 40
+        };
         
         setResults(prev => [...prev, mockResult]);
+        setVideoAnalysisResults(prev => [...prev, mockVideoAnalysis]);
         
         // Create a dummy blob
         const mockBlob = new Blob(['Simulation Data'], { type: 'text/plain' });
@@ -160,7 +191,11 @@ export const Interview: React.FC<InterviewProps> = ({ job, applicantName, onComp
             setStep('question');
         } else {
             setStep('finished');
-            onComplete([...results, mockResult], { ...videoBlobs, [currentQuestionIndex]: mockBlob });
+            onComplete(
+              [...results, mockResult],
+              [...videoAnalysisResults, mockVideoAnalysis],
+              { ...videoBlobs, [currentQuestionIndex]: mockBlob }
+            );
         }
         return;
     }
